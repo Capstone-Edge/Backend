@@ -1,0 +1,299 @@
+import json
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.db.database import get_db
+
+router = APIRouter(prefix="/api/v1/commands", tags=["Commands"])
+
+
+class CommandItem(BaseModel):
+    step_order: int
+    device_name: str
+    device_type: str
+    tool_name: str
+    parameters: dict[str, Any]
+
+
+class ExecuteCommandRequest(BaseModel):
+    session_id: str
+    raw_user_input: str | None = None
+    intent: str
+    commands: list[CommandItem]
+    response_text: str
+
+
+def normalize_state_data(state_data):
+    if isinstance(state_data, str):
+        return json.loads(state_data)
+    return state_data or {}
+
+
+def apply_command_to_state(state: dict[str, Any], tool_name: str, parameters: dict[str, Any]):
+    """
+    MVP 기준 상태 업데이트 로직.
+    tool_name별로 parameters 값을 device_states.state_data에 반영한다.
+    """
+
+    # 공통 전원
+    if tool_name.endswith(".set_power"):
+        state["power"] = parameters["power"]
+
+    # 에어컨
+    elif tool_name == "air_conditioner.set_temperature":
+        state["temperature"] = parameters["temperature"]
+
+    elif tool_name == "air_conditioner.set_mode":
+        state["mode"] = parameters["mode"]
+
+    elif tool_name == "air_conditioner.set_fan_speed":
+        state["fan_speed"] = parameters["fan_speed"]
+
+    elif tool_name == "air_conditioner.set_louver_angle":
+        state["louver_angle"] = parameters["louver_angle"]
+
+    elif tool_name == "air_conditioner.set_timer":
+        state["timer"] = {
+            "delay_minutes": parameters["delay_minutes"]
+        }
+
+    # 조명
+    elif tool_name == "light.set_brightness":
+        state["brightness"] = parameters["brightness"]
+
+    elif tool_name == "light.set_color":
+        state["color"] = parameters["color"]
+
+    elif tool_name == "light.set_color_temperature":
+        state["color_temperature"] = parameters["color_temperature"]
+
+    elif tool_name == "light.set_scene":
+        state["scene_name"] = parameters["scene_name"]
+
+    # TV
+    elif tool_name == "tv.set_volume":
+        state["volume"] = parameters["volume"]
+
+    elif tool_name == "tv.set_channel":
+        state["channel"] = parameters["channel"]
+
+    elif tool_name == "tv.open_app":
+        state["app_name"] = parameters["app_name"]
+
+    elif tool_name == "tv.play_content":
+        state["content_title"] = parameters["content_title"]
+        if "app_name" in parameters:
+            state["app_name"] = parameters["app_name"]
+
+    else:
+        raise ValueError(f"Unsupported tool_name: {tool_name}")
+
+    return state
+
+
+@router.post("/execute")
+def execute_commands(
+    request: ExecuteCommandRequest,
+    db: Session = Depends(get_db),
+):
+    if not request.commands:
+        raise HTTPException(status_code=400, detail="commands must not be empty")
+
+    executed_commands = []
+    updated_states_map = {}
+
+    try:
+        session_query = """
+            SELECT id
+            FROM dialogue_sessions
+            WHERE session_id = :session_id
+            LIMIT 1
+        """
+
+        existing_session = db.execute(
+            text(session_query),
+            {"session_id": request.session_id}
+        ).mappings().first()
+
+        if not existing_session:
+            create_session_query = """
+                INSERT INTO dialogue_sessions (
+                    session_id,
+                    messages,
+                    status,
+                    pending_command,
+                    clarification_turn,
+                    last_intent,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    :session_id,
+                    :messages,
+                    :status,
+                    :pending_command,
+                    :clarification_turn,
+                    :last_intent,
+                    NOW(),
+                    NOW()
+                )
+            """
+
+            db.execute(
+                text(create_session_query),
+                {
+                    "session_id": request.session_id,
+                    "messages": json.dumps([], ensure_ascii=False),
+                    "status": "active",
+                    "pending_command": None,
+                    "clarification_turn": 0,
+                    "last_intent": request.intent,
+                }
+            )
+
+
+        for command in sorted(request.commands, key=lambda x: x.step_order):
+            # 1. device + command 존재 여부 확인
+            lookup_query = """
+                SELECT
+                    d.id AS device_id,
+                    d.name AS device_name,
+                    d.display_name AS display_name,
+                    d.location AS location,
+                    dt.name AS device_type,
+                    c.id AS command_id,
+                    c.tool_name AS tool_name,
+                    ds.state_data AS state_data
+                FROM devices d
+                JOIN device_types dt ON d.device_type_id = dt.id
+                JOIN commands c ON c.device_type_id = dt.id
+                JOIN device_states ds ON ds.device_id = d.id
+                WHERE d.name = :device_name
+                  AND dt.name = :device_type
+                  AND c.tool_name = :tool_name
+                  AND d.is_active = true
+                  AND c.is_active = true
+                LIMIT 1
+            """
+
+            row = db.execute(
+                text(lookup_query),
+                {
+                    "device_name": command.device_name,
+                    "device_type": command.device_type,
+                    "tool_name": command.tool_name,
+                },
+            ).mappings().first()
+
+            if not row:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Invalid device or command: {command.device_name}, {command.tool_name}",
+                )
+
+            # 2. 현재 상태 로드
+            state = normalize_state_data(row["state_data"])
+
+            # 3. 상태 업데이트
+            new_state = apply_command_to_state(
+                state=state,
+                tool_name=command.tool_name,
+                parameters=command.parameters,
+            )
+
+            # 4. device_states 업데이트
+            update_query = """
+                UPDATE device_states
+                SET state_data = :state_data,
+                    updated_at = NOW()
+                WHERE device_id = :device_id
+            """
+
+            db.execute(
+                text(update_query),
+                {
+                    "state_data": json.dumps(new_state, ensure_ascii=False),
+                    "device_id": row["device_id"],
+                },
+            )
+
+            # 5. command_logs 저장
+            log_query = """
+                INSERT INTO command_logs (
+                    session_id,
+                    device_id,
+                    command_id,
+                    raw_user_input,
+                    input_params,
+                    parsed_command,
+                    result,
+                    status,
+                    error_message,
+                    executed_at
+                )
+                VALUES (
+                    :session_id,
+                    :device_id,
+                    :command_id,
+                    :raw_user_input,
+                    :input_params,
+                    :parsed_command,
+                    :result,
+                    :status,
+                    :error_message,
+                    NOW()
+                )
+            """
+
+            db.execute(
+                text(log_query),
+                {
+                    "session_id": request.session_id,
+                    "device_id": row["device_id"],
+                    "command_id": row["command_id"],
+                    "raw_user_input": request.raw_user_input,
+                    "input_params": json.dumps(command.parameters, ensure_ascii=False),
+                    "parsed_command": json.dumps(command.model_dump(), ensure_ascii=False),
+                    "result": json.dumps({"updated_state": new_state}, ensure_ascii=False),
+                    "status": "success",
+                    "error_message": None,
+                },
+            )
+
+            executed_commands.append(
+                {
+                    "step_order": command.step_order,
+                    "device_name": command.device_name,
+                    "tool_name": command.tool_name,
+                    "status": "success",
+                }
+            )
+
+            updated_states_map[command.device_name] = {
+                "device_name": command.device_name,
+                "device_type": row["device_type"],
+                "display_name": row["display_name"],
+                "location": row["location"],
+                "state": new_state,
+            }
+
+        db.commit()
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "success": True,
+        "executed_commands": executed_commands,
+        "updated_states": list(updated_states_map.values()),
+        "response_text": request.response_text,
+    }
