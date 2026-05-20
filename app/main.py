@@ -15,6 +15,21 @@ import app.services.dialogue_service as dm
 # ✨ 1. 새로 만든 edge 라우터 import
 from app.api.v1 import edge 
 
+# SQLAlchemy 관련 imports (db 연결용)
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from fastapi import Depends
+from app.db.database import get_db
+
+# 라우터 import (새로 만든 MCP 라우터, 기존 MCP 라우터는 그대로 유지)
+from app.api.v1.mcp import router as mcp_router
+
+# 라우터 import (새로 만든 routines 라우터)
+from app.api.v1.routines import router as routines_router
+
+# 라우터 import (새로 만든 commands 라우터)
+from app.api.v1.commands import router as commands_router
+
 # ─── 요청/응답 모델 (아직 분리 안 된 구형 모델들) ───────────────
 
 class ClarifyRequest(BaseModel):
@@ -25,6 +40,10 @@ class ClarifyRequest(BaseModel):
 # ─── FastAPI 앱 ───────────────────────────────────────
 
 app = FastAPI(title="SmartHome AIoT API")
+
+app.include_router(mcp_router) # 기존 MCP 라우터 등록
+app.include_router(routines_router) # 새로 만든 Routines 라우터 등록
+app.include_router(commands_router) # 새로 만든 Commands 라우터 등록
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,6 +59,16 @@ app.include_router(edge.router)
 @app.get("/")
 async def root():
     return {"message": "Smart Home AIoT Backend is running!"}
+
+# ----------------------------------------------------
+@app.get("/api/v1/db/health")
+async def db_health(db: Session = Depends(get_db)):
+    result = db.execute(text("SELECT DATABASE() AS db_name")).mappings().first()
+
+    return {
+        "status": "ok",
+        "db_name": result["db_name"]
+    }
 
 # ─── 기기 제어 실행 헬퍼 ───────────────────────────────────
 
