@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\82102\\\\Desktop\\\\work_space\\\\Edge\" -Filter \".gitignore\" -Recurse -Force)",
+      "Bash(Select-Object FullName)",
+      "Bash(git rm *)",
+      "Bash(git reset *)",
+      "Bash(git add *)",
+      "Bash(git restore *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git filter-repo *)",
+      "Bash(pip install *)",
+      "Bash(git pull *)",
+      "Bash(git rebase *)",
+      "Bash(git commit *)"
+    ]
+  }
+}

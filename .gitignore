@@ -1,0 +1,11 @@
+# 가상 환경 (가장 중요!)
+venv/
+.env
+
+# 파이썬 캐시 파일
+__pycache__/
+*.py[cod]
+
+# 운영체제 임시 파일
+.DS_Store
+Thumbs.db
