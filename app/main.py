@@ -30,6 +30,8 @@ from app.api.v1.routines import router as routines_router
 # 라우터 import (새로 만든 commands 라우터)
 from app.api.v1.commands import router as commands_router
 
+from app.core.ws_manager import ws_manager
+
 # ─── 요청/응답 모델 (아직 분리 안 된 구형 모델들) ───────────────
 
 class ClarifyRequest(BaseModel):
@@ -152,6 +154,28 @@ async def devices_state():
     """전체 기기 상태 반환"""
     return device_states.model_dump()
 
+
+@app.websocket("/ws/device-states")
+async def websocket_device_states(websocket: WebSocket):
+    """
+    Frontend 기기 상태 실시간 동기화용 WebSocket endpoint.
+
+    연결된 클라이언트는 /api/v1/commands/execute 실행 후
+    device_state_update 메시지를 수신한다.
+    """
+    await ws_manager.connect(websocket)
+
+    try:
+        while True:
+            await websocket.receive_text()
+
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+
+    except Exception:
+        ws_manager.disconnect(websocket)
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -168,3 +192,26 @@ async def websocket_endpoint(websocket: WebSocket):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+
+    
+@app.websocket("/ws/device-states")
+async def websocket_device_states(websocket: WebSocket):
+    """
+    Frontend 기기 상태 실시간 동기화용 WebSocket endpoint.
+
+    연결된 클라이언트는 /api/v1/commands/execute 실행 후
+    device_state_update 메시지를 수신한다.
+    """
+    await ws_manager.connect(websocket)
+
+    try:
+        while True:
+            # 클라이언트 연결 유지용 receive.
+            # Frontend가 ping 또는 임의 메시지를 보내면 여기서 수신된다.
+            await websocket.receive_text()
+
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+
+    except Exception:
+        ws_manager.disconnect(websocket)

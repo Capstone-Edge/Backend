@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 
+from app.core.ws_manager import ws_manager
+
 router = APIRouter(prefix="/api/v1/commands", tags=["Commands"])
 
 
@@ -96,7 +98,7 @@ def apply_command_to_state(state: dict[str, Any], tool_name: str, parameters: di
 
 
 @router.post("/execute")
-def execute_commands(
+async def execute_commands(
     request: ExecuteCommandRequest,
     db: Session = Depends(get_db),
 ):
@@ -290,10 +292,32 @@ def execute_commands(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    
 
-    return {
+
+
+
+    updated_states = list(updated_states_map.values())
+
+    response = {
         "success": True,
         "executed_commands": executed_commands,
-        "updated_states": list(updated_states_map.values()),
+        "updated_states": updated_states,
         "response_text": request.response_text,
     }
+
+    for updated_state in updated_states:
+        websocket_message = {
+            "type": "device_state_update",
+            "device_name": updated_state["device_name"],
+            "device_type": updated_state["device_type"],
+            "display_name": updated_state.get("display_name"),
+            "location": updated_state["location"],
+            "state": updated_state["state"],
+            "source": "ai_command",
+            "response_text": request.response_text,
+        }
+
+        await ws_manager.broadcast(websocket_message)
+
+    return response
