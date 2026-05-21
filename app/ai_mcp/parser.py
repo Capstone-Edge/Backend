@@ -1,4 +1,7 @@
 import re
+import json
+from sqlalchemy import text
+
 from app.api.v1.mcp import get_mcp_tools, get_mcp_device_states
 from app.api.v1.routines import get_routines, get_routine_detail
 
@@ -256,8 +259,131 @@ async def parse_natural_language(
         }
         response_text = clarification_question
 
+
+
+    effective_session_id = session_id or "mock-session-001"
+
+    if db is not None:
+        existing_session = db.execute(
+            text("""
+                SELECT id
+                FROM dialogue_sessions
+                WHERE session_id = :session_id
+                LIMIT 1
+            """),
+            {"session_id": effective_session_id},
+        ).mappings().first()
+
+        if clarification_needed:
+            pending_command_json = json.dumps(pending_command or {}, ensure_ascii=False)
+
+            if existing_session:
+                db.execute(
+                    text("""
+                        UPDATE dialogue_sessions
+                        SET status = :status,
+                            pending_command = :pending_command,
+                            clarification_turn = :clarification_turn,
+                            last_intent = :last_intent,
+                            updated_at = NOW()
+                        WHERE session_id = :session_id
+                    """),
+                    {
+                        "session_id": effective_session_id,
+                        "status": "pending",
+                        "pending_command": pending_command_json,
+                        "clarification_turn": 1,
+                        "last_intent": intent,
+                    },
+                )
+            else:
+                db.execute(
+                    text("""
+                        INSERT INTO dialogue_sessions (
+                            session_id,
+                            messages,
+                            status,
+                            pending_command,
+                            clarification_turn,
+                            last_intent,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (
+                            :session_id,
+                            :messages,
+                            :status,
+                            :pending_command,
+                            :clarification_turn,
+                            :last_intent,
+                            NOW(),
+                            NOW()
+                        )
+                    """),
+                    {
+                        "session_id": effective_session_id,
+                        "messages": json.dumps([], ensure_ascii=False),
+                        "status": "pending",
+                        "pending_command": pending_command_json,
+                        "clarification_turn": 1,
+                        "last_intent": intent,
+                    },
+                )
+        else:
+            if existing_session:
+                db.execute(
+                    text("""
+                        UPDATE dialogue_sessions
+                        SET status = :status,
+                            pending_command = NULL,
+                            clarification_turn = 0,
+                            last_intent = :last_intent,
+                            updated_at = NOW()
+                        WHERE session_id = :session_id
+                    """),
+                    {
+                        "session_id": effective_session_id,
+                        "status": "active",
+                        "last_intent": intent,
+                    },
+                )
+            else:
+                db.execute(
+                    text("""
+                        INSERT INTO dialogue_sessions (
+                            session_id,
+                            messages,
+                            status,
+                            pending_command,
+                            clarification_turn,
+                            last_intent,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (
+                            :session_id,
+                            :messages,
+                            :status,
+                            NULL,
+                            0,
+                            :last_intent,
+                            NOW(),
+                            NOW()
+                        )
+                    """),
+                    {
+                        "session_id": effective_session_id,
+                        "messages": json.dumps([], ensure_ascii=False),
+                        "status": "active",
+                        "last_intent": intent,
+                    },
+                )
+
+        db.commit()
+
+
     return {
-        "session_id": session_id or "mock-session-001",
+        "session_id": effective_session_id,
         "intent": intent,
         "commands": commands,
         "clarification_needed": clarification_needed,
