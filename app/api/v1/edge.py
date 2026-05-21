@@ -6,6 +6,10 @@ import json
 import re
 from typing import Any
 
+import os
+
+from app.ai_mcp.llm_parser import parse_with_llm
+
 import httpx
 
 from sqlalchemy.orm import Session
@@ -25,7 +29,6 @@ from app.schemas.edge_dto import (
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app.db.database import get_db
 
 # 스프링의 @RequestMapping("/api/v1/commands")와 같은 역할
 router = APIRouter(prefix="/api/v1", tags=["Edge Communication"])
@@ -42,13 +45,20 @@ async def parse_command(
 ):
     print(f"[/parse] Device: {request.device_id}, Text: {request.stt_text}")
 
-    result = await parse_natural_language(
-        raw_text=request.stt_text,
-        session_id=getattr(request, "session_id", None),
-        device_id=request.device_id,
-        source="edge",
-        db=db,
-    )
+    parser_mode = os.getenv("PARSER_MODE", "rule")
+
+    common_args = {
+        "raw_text": request.stt_text,
+        "session_id": request.session_id,
+        "device_id": request.device_id,
+        "source": request.source or "edge",
+        "db": db,
+    }
+
+    if parser_mode == "llm":
+        result = await parse_with_llm(**common_args)
+    else:
+        result = await parse_natural_language(**common_args)
 
     return result
     
@@ -183,7 +193,6 @@ async def clarify_dialogue(
         "response_text": response_text,
     }
 
-    return result
 
 # @router.post("/dialogues/clarify-and-execute")
 # async def clarify_and_execute_dialogue(request: dict):
