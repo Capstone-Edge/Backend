@@ -3,8 +3,10 @@ from typing import Optional
 
 # 엣지 -> 백엔드 (Request)
 class CommandRequest(BaseModel):
-    device_id: str = Field(..., example="edge-pi-01", description="명령을 내린 기기 ID")
-    stt_text: str = Field(..., example="거실 에어컨 24도로 켜줘", description="STT 변환 텍스트")
+    session_id: str | None = None
+    device_id: str
+    stt_text: str
+    source: str | None = "edge"
 
 # 백엔드 -> 엣지 (Response)
 class CommandResponse(BaseModel):
