@@ -4,11 +4,12 @@ from fastapi import APIRouter
 import httpx
 from fastapi import HTTPException
 
-from app.services.ai_mcp_client import (
-    request_parse_to_ai_mcp,
-    request_clarify_to_ai_mcp,
-    request_clarify_and_execute_to_ai_mcp,
-)
+from sqlalchemy.orm import Session
+from fastapi import Depends
+
+from app.db.database import get_db
+from app.ai_mcp.parser import parse_natural_language
+from app.ai_mcp.clarifier import clarify_natural_language
 
 # ✨ Clarify 관련 DTO들도 함께 import 해주어야 합니다.
 from app.schemas.edge_dto import (
@@ -23,68 +24,52 @@ router = APIRouter(prefix="/api/v1", tags=["Edge Communication"])
 
 # 1. 초기 명령 파싱
 @router.post("/commands/parse")
-async def parse_command(request: CommandRequest):
+async def parse_command(
+    request: CommandRequest,
+    db: Session = Depends(get_db),
+):
     print(f"[/parse] Device: {request.device_id}, Text: {request.stt_text}")
 
-    payload = {
-        "session_id": getattr(request, "session_id", None),
-        "device_id": request.device_id,
-        "raw_text": request.stt_text,
-        "source": "edge",
-    }
+    result = await parse_natural_language(
+        raw_text=request.stt_text,
+        session_id=getattr(request, "session_id", None),
+        device_id=request.device_id,
+        source="edge",
+        db=db,
+    )
 
-    try:
-        result = await request_parse_to_ai_mcp(payload)
-        return result
-
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"AI/MCP Server returned error: {e.response.text}",
-        )
-
-    except httpx.HTTPError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"AI/MCP Server connection failed: {str(e)}",
-        )
+    return result
     
 # 2. 재질문 답변 처리 (추가된 부분)
 @router.post("/dialogues/clarify")
-async def clarify_dialogue(request: dict):
-    try:
-        result = await request_clarify_to_ai_mcp(request)
-        return result
+async def clarify_dialogue(
+    request: dict,
+):
+    result = await clarify_natural_language(
+        session_id=request.get("session_id"),
+        user_answer=request.get("user_answer"),
+        pending_command=request.get("pending_command"),
+    )
 
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"AI/MCP Server returned error: {e.response.text}",
-        )
+    return result
 
-    except httpx.HTTPError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"AI/MCP Server connection failed: {str(e)}",
-        )
+# @router.post("/dialogues/clarify-and-execute")
+# async def clarify_and_execute_dialogue(request: dict):
+#     try:
+#         result = await request_clarify_and_execute_to_ai_mcp(request)
+#         return result
 
-@router.post("/dialogues/clarify-and-execute")
-async def clarify_and_execute_dialogue(request: dict):
-    try:
-        result = await request_clarify_and_execute_to_ai_mcp(request)
-        return result
+#     except httpx.HTTPStatusError as e:
+#         raise HTTPException(
+#             status_code=502,
+#             detail=f"AI/MCP Server returned error: {e.response.text}",
+#         )
 
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"AI/MCP Server returned error: {e.response.text}",
-        )
-
-    except httpx.HTTPError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"AI/MCP Server connection failed: {str(e)}",
-        )
+#     except httpx.HTTPError as e:
+#         raise HTTPException(
+#             status_code=502,
+#             detail=f"AI/MCP Server connection failed: {str(e)}",
+#         )
 
 
 
