@@ -102,7 +102,7 @@ async def parse_with_llm(
             clarification_turn=forced_result["clarification_turn"],
         )
 
-    return forced_result
+        return forced_result
 
     tools_data = get_mcp_tools(
         device_type=None,
