@@ -35,7 +35,6 @@ async def parse_natural_language(
         db=db,
     )
 
-
     commands = []
     clarification_needed = False
     clarification_question = None
@@ -209,7 +208,155 @@ async def parse_natural_language(
             }
             response_text = clarification_question
 
-    # 4. 모호한 더움 표현
+    # 4. 오븐 제어
+    elif "오븐" in raw_text:
+        if "켜" in raw_text:
+            commands.append({
+                "step_order": 1,
+                "device_name": "kitchen_oven",
+                "device_type": "oven",
+                "tool_name": "oven.set_power",
+                "parameters": {"power": "on"},
+            })
+            response_text = "주방 오븐을 켤게요."
+
+        if "꺼" in raw_text:
+            commands.append({
+                "step_order": len(commands) + 1,
+                "device_name": "kitchen_oven",
+                "device_type": "oven",
+                "tool_name": "oven.set_power",
+                "parameters": {"power": "off"},
+            })
+            response_text = "주방 오븐을 끌게요."
+
+        match = re.search(r"(\d{2,3})\s*도", raw_text)
+        if match:
+            temperature = int(match.group(1))
+            commands.append({
+                "step_order": len(commands) + 1,
+                "device_name": "kitchen_oven",
+                "device_type": "oven",
+                "tool_name": "oven.set_temperature",
+                "parameters": {"target_temp": temperature},
+            })
+            response_text = f"오븐 온도를 {temperature}도로 설정할게요."
+
+        if not commands:
+            clarification_needed = True
+            clarification_question = "오븐을 어떻게 설정할까요? 전원, 온도, 조리 모드 중 선택해 주세요."
+            pending_command = {
+                "device_name": "kitchen_oven",
+                "device_type": "oven",
+                "missing_parameters": ["action_or_parameter"],
+            }
+            response_text = clarification_question
+
+    # 5. 공기청정기 제어
+    elif "공기청정기" in raw_text or "공기 청정기" in raw_text:
+        if "켜" in raw_text:
+            commands.append({
+                "step_order": 1,
+                "device_name": "living_room_air_purifier",
+                "device_type": "air_purifier",
+                "tool_name": "air_purifier.set_power",
+                "parameters": {"power": "on"},
+            })
+            response_text = "거실 공기청정기를 켤게요."
+
+        if "꺼" in raw_text:
+            commands.append({
+                "step_order": len(commands) + 1,
+                "device_name": "living_room_air_purifier",
+                "device_type": "air_purifier",
+                "tool_name": "air_purifier.set_power",
+                "parameters": {"power": "off"},
+            })
+            response_text = "거실 공기청정기를 끌게요."
+
+        if not commands:
+            clarification_needed = True
+            clarification_question = "공기청정기를 어떻게 설정할까요? 전원이나 운전 모드를 선택해 주세요."
+            pending_command = {
+                "device_name": "living_room_air_purifier",
+                "device_type": "air_purifier",
+                "missing_parameters": ["action_or_parameter"],
+            }
+            response_text = clarification_question
+
+    # 6. 세탁기 제어
+    elif "세탁기" in raw_text:
+        if "켜" in raw_text:
+            commands.append({
+                "step_order": 1,
+                "device_name": "utility_room_washing_machine",
+                "device_type": "washing_machine",
+                "tool_name": "washing_machine.set_power",
+                "parameters": {"power": "on"},
+            })
+            response_text = "다용도실 세탁기를 켤게요."
+
+        if "돌려" in raw_text or "시작" in raw_text:
+            commands.append({
+                "step_order": len(commands) + 1,
+                "device_name": "utility_room_washing_machine",
+                "device_type": "washing_machine",
+                "tool_name": "washing_machine.set_action",
+                "parameters": {"action": "start"},
+            })
+            response_text = "세탁을 시작할게요."
+
+        if not commands:
+            clarification_needed = True
+            clarification_question = "세탁기를 어떻게 설정할까요? 세탁 코스나 시작 여부를 말씀해 주세요."
+            pending_command = {
+                "device_name": "utility_room_washing_machine",
+                "device_type": "washing_machine",
+                "missing_parameters": ["action_or_parameter"],
+            }
+            response_text = clarification_question
+
+    # 7. 로봇청소기 제어
+    elif "청소기" in raw_text:
+        if "돌려" in raw_text or "청소해" in raw_text or "시작" in raw_text:
+            commands.append({
+                "step_order": 1,
+                "device_name": "living_room_robot_vacuum",
+                "device_type": "robot_vacuum",
+                "tool_name": "robot_vacuum.set_action",
+                "parameters": {"action": "start_cleaning"},
+            })
+            response_text = "로봇청소기 청소를 시작할게요."
+        elif "멈춰" in raw_text or "정지" in raw_text:
+            commands.append({
+                "step_order": 1,
+                "device_name": "living_room_robot_vacuum",
+                "device_type": "robot_vacuum",
+                "tool_name": "robot_vacuum.set_action",
+                "parameters": {"action": "pause"},
+            })
+            response_text = "로봇청소기를 일시정지할게요."
+        elif "충전" in raw_text or "돌아가" in raw_text:
+            commands.append({
+                "step_order": 1,
+                "device_name": "living_room_robot_vacuum",
+                "device_type": "robot_vacuum",
+                "tool_name": "robot_vacuum.set_action",
+                "parameters": {"action": "return_to_dock"},
+            })
+            response_text = "로봇청소기를 충전기로 돌려보낼게요."
+
+        if not commands:
+            clarification_needed = True
+            clarification_question = "로봇청소기를 어떻게 설정할까요? 청소 시작, 일시정지, 또는 충전기 복귀를 말씀해 주세요."
+            pending_command = {
+                "device_name": "living_room_robot_vacuum",
+                "device_type": "robot_vacuum",
+                "missing_parameters": ["action_or_parameter"],
+            }
+            response_text = clarification_question
+
+    # 8. 모호한 더움 표현 (에어컨 추론)
     elif "덥" in raw_text or "더워" in raw_text:
         clarification_needed = True
         clarification_question = "에어컨을 몇 도로 맞춰드릴까요?"
@@ -231,7 +378,7 @@ async def parse_natural_language(
         }
         response_text = clarification_question
 
-    # 5. 루틴 호출
+    # 9. 루틴 호출
     elif "수면 모드" in raw_text:
         intent = "routine_control"
         routine = get_routine_detail("sleep", db=db)
@@ -258,8 +405,6 @@ async def parse_natural_language(
             "missing_parameters": ["device", "action"],
         }
         response_text = clarification_question
-
-
 
     effective_session_id = session_id or "mock-session-001"
 

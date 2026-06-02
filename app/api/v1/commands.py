@@ -7,7 +7,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-
 from app.core.ws_manager import ws_manager
 
 router = APIRouter(prefix="/api/v1/commands", tags=["Commands"])
@@ -48,16 +47,12 @@ def apply_command_to_state(state: dict[str, Any], tool_name: str, parameters: di
     # 에어컨
     elif tool_name == "air_conditioner.set_temperature":
         state["temperature"] = parameters["temperature"]
-
     elif tool_name == "air_conditioner.set_mode":
         state["mode"] = parameters["mode"]
-
     elif tool_name == "air_conditioner.set_fan_speed":
         state["fan_speed"] = parameters["fan_speed"]
-
     elif tool_name == "air_conditioner.set_louver_angle":
         state["louver_angle"] = parameters["louver_angle"]
-
     elif tool_name == "air_conditioner.set_timer":
         state["timer"] = {
             "delay_minutes": parameters["delay_minutes"]
@@ -66,30 +61,64 @@ def apply_command_to_state(state: dict[str, Any], tool_name: str, parameters: di
     # 조명
     elif tool_name == "light.set_brightness":
         state["brightness"] = parameters["brightness"]
-
     elif tool_name == "light.set_color":
         state["color"] = parameters["color"]
-
     elif tool_name == "light.set_color_temperature":
         state["color_temperature"] = parameters["color_temperature"]
-
     elif tool_name == "light.set_scene":
         state["scene_name"] = parameters["scene_name"]
 
     # TV
     elif tool_name == "tv.set_volume":
         state["volume"] = parameters["volume"]
-
     elif tool_name == "tv.set_channel":
         state["channel"] = parameters["channel"]
-
     elif tool_name == "tv.open_app":
         state["app_name"] = parameters["app_name"]
-
     elif tool_name == "tv.play_content":
         state["content_title"] = parameters["content_title"]
         if "app_name" in parameters:
             state["app_name"] = parameters["app_name"]
+
+    # 오븐
+    elif tool_name == "oven.set_temperature":
+        state["target_temp"] = parameters["target_temp"]
+    elif tool_name == "oven.set_mode":
+        state["mode"] = parameters["mode"]
+    elif tool_name == "oven.set_fan_speed":
+        state["fan_speed"] = parameters["fan_speed"]
+    elif tool_name == "oven.set_steam":
+        state["steam"] = parameters["steam"]
+    elif tool_name == "oven.set_probe_target":
+        state["probe_temp"] = parameters["probe_target"]
+
+    # 공기청정기
+    elif tool_name == "air_purifier.set_mode":
+        state["mode"] = parameters["mode"]
+    elif tool_name == "air_purifier.set_fan_speed":
+        state["fan_speed"] = parameters["fan_speed"]
+
+    # 세탁기
+    elif tool_name == "washing_machine.set_action":
+        state["status"] = parameters["action"]
+    elif tool_name == "washing_machine.set_mode":
+        state["mode"] = parameters["mode"]
+    elif tool_name == "washing_machine.set_spin_speed":
+        state["spin_speed"] = parameters["spin_speed"]
+    elif tool_name == "washing_machine.set_water_temperature":
+        state["water_temperature"] = parameters["water_temperature"]
+    elif tool_name == "washing_machine.set_reservation":
+        state["reservation_time"] = parameters["start_time"]
+
+    # 로봇청소기
+    elif tool_name == "robot_vacuum.set_action":
+        state["status"] = parameters["action"]
+    elif tool_name == "robot_vacuum.set_zone":
+        state["zone"] = parameters["zone"]
+    elif tool_name == "robot_vacuum.set_suction_power":
+        state["suction_power"] = parameters["suction_power"]
+    elif tool_name == "robot_vacuum.set_cleaning_mode":
+        state["cleaning_mode"] = parameters["cleaning_mode"]
 
     else:
         raise ValueError(f"Unsupported tool_name: {tool_name}")
@@ -156,7 +185,6 @@ async def execute_commands(
                     "last_intent": request.intent,
                 }
             )
-
 
         for command in sorted(request.commands, key=lambda x: x.step_order):
             # 1. device + command 존재 여부 확인
@@ -292,10 +320,6 @@ async def execute_commands(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-    
-
-
-
 
     updated_states = list(updated_states_map.values())
 
