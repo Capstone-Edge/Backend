@@ -249,32 +249,93 @@ POST /api/v1/commands/process
 
 ## 9.2 session_id 결정 규칙
 
+Backend는 `session_id`와 `client_id`를 분리해서 사용한다.
+
+* `session_id`는 하나의 대화 흐름을 식별하는 값이다.
+* `client_id`는 요청을 보낸 Edge 장치 또는 클라이언트를 식별하는 값이다.
+* `client_id`는 `session_id`를 대체하는 값이 아니라, `session_id`가 없을 때 최근 재질문 세션을 복구하기 위한 보조 식별자이다.
+
 Backend는 다음 순서로 세션을 결정한다.
 
 ```text
-1. request.session_id가 있으면 해당 session_id 사용
-2. session_id가 없고 client_id가 있으면 sess-{client_id} 사용
-3. client_id도 없으면 sess-{device_id} 사용
+1. request.session_id가 있으면 해당 session_id를 사용한다.
+2. request.session_id가 없으면 client_id 기준으로 최근 waiting_clarification 또는 pending 상태의 세션을 조회한다.
+3. 최근 pending 세션이 있고 TTL이 만료되지 않았다면 해당 session_id를 복구해서 사용한다.
+4. 최근 pending 세션이 없거나 TTL이 만료되었다면 새로운 session_id를 생성한다.
 ```
 
-예를 들어 다음 요청은:
+즉, 더 이상 `session_id`가 없다고 해서 무조건 `sess-{client_id}` 형태의 고정 세션을 사용하지 않는다.
+
+예를 들어 다음 요청이 들어오면:
 
 ```json
 {
-  "client_id": "frontend-browser-001",
-  "device_id": "frontend-test",
+  "client_id": "edge-pi-01",
+  "device_id": "edge-pi-01",
   "raw_text": "집이 너무 덥네",
-  "source": "frontend"
+  "source": "edge"
 }
 ```
 
-Backend 내부에서 아래 세션으로 처리된다.
+Backend는 새로운 `session_id`를 생성하여 처리한다.
 
 ```text
-sess-frontend-browser-001
+sess-a8f31c2d
 ```
 
-따라서 다음 요청에서도 같은 `client_id`를 보내면 `session_id`를 직접 보내지 않아도 재질문 흐름이 이어진다.
+명령이 모호한 경우 Backend는 해당 세션의 `dialogue_sessions.pending_command`에 미완성 명령을 저장하고, 응답에 `session_id`를 포함한다.
+
+```json
+{
+  "session_id": "sess-a8f31c2d",
+  "status": "waiting_clarification",
+  "mode": "parse",
+  "clarification_needed": true,
+  "clarification_question": "에어컨을 몇 도로 맞춰드릴까요?",
+  "response_text": "에어컨을 몇 도로 맞춰드릴까요?"
+}
+```
+
+Edge는 응답의 `status`가 `waiting_clarification`이면 응답으로 받은 `session_id`를 저장하고, 다음 사용자 발화에 포함해서 보낸다.
+
+```json
+{
+  "session_id": "sess-a8f31c2d",
+  "client_id": "edge-pi-01",
+  "device_id": "edge-pi-01",
+  "raw_text": "24도로 해줘",
+  "source": "edge"
+}
+```
+
+이 경우 Backend는 해당 `session_id`의 `pending_command`를 조회하고, 사용자의 입력을 이전 재질문에 대한 답변으로 처리한다.
+
+만약 Edge가 재시작되거나 일시적인 오류로 `session_id`를 잃어버렸더라도, 같은 `client_id`에 최근 `waiting_clarification` 또는 `pending` 상태의 세션이 있으면 Backend가 해당 세션을 복구할 수 있다.
+
+```json
+{
+  "client_id": "edge-pi-01",
+  "device_id": "edge-pi-01",
+  "raw_text": "24도로 해줘",
+  "source": "edge"
+}
+```
+
+이 경우 Backend는 `client_id = edge-pi-01` 기준으로 최근 pending 세션을 찾아 기존 `session_id`를 복구한다.
+
+단, pending 세션이 TTL을 초과했거나 이미 완료 또는 취소된 경우에는 복구하지 않고 새로운 `session_id`를 생성하여 일반 명령으로 처리한다.
+
+정리하면 다음과 같다.
+
+| 구분                | 의미                          |
+| ----------------- | --------------------------- |
+| `session_id`      | 하나의 대화 흐름을 식별하는 값           |
+| `client_id`       | Edge 장치 또는 클라이언트를 식별하는 값    |
+| `device_id`       | 요청을 보낸 물리 장치 또는 테스트 장치 ID   |
+| `pending_command` | 재질문 후 완성해야 할 미완성 명령         |
+| `TTL`             | pending_command가 유지되는 제한 시간 |
+
+최종적으로 `client_id`는 고정 세션 생성용이 아니라, `session_id`가 유실되었을 때 최근 pending 세션을 복구하기 위한 보조 식별자로 사용된다.
 
 ---
 

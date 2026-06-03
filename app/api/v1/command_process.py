@@ -72,14 +72,64 @@ def _pick_raw_text(request: CommandProcessRequest) -> str:
 
     return raw_text.strip()
 
-def _resolve_session_id(request: CommandProcessRequest) -> str:
+def _generate_session_id() -> str:
+    return f"sess-{uuid4().hex[:8]}"
+
+
+def _find_recent_pending_session_by_client_id(
+    db: Session,
+    client_id: str | None,
+) -> str | None:
+    if not client_id:
+        return None
+
+    row = db.execute(
+        text(
+            """
+            SELECT
+                session_id
+            FROM dialogue_sessions
+            WHERE client_id = :client_id
+              AND pending_command IS NOT NULL
+              AND status IN ('pending', 'waiting_clarification')
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """
+        ),
+        {"client_id": client_id},
+    ).mappings().first()
+
+    if not row:
+        return None
+
+    # TTL 검사는 기존 _try_load_pending_command()에서 다시 수행한다.
+    pending_info = _try_load_pending_command(
+        db=db,
+        session_id=row["session_id"],
+    )
+
+    if pending_info is None:
+        return None
+
+    return row["session_id"]
+
+
+def _resolve_session_id(
+    db: Session,
+    request: CommandProcessRequest,
+) -> str:
     if request.session_id and request.session_id.strip():
         return request.session_id.strip()
 
-    if request.client_id and request.client_id.strip():
-        return f"sess-{request.client_id.strip()}"
+    recovered_session_id = _find_recent_pending_session_by_client_id(
+        db=db,
+        client_id=request.client_id,
+    )
 
-    return f"sess-{request.device_id.strip()}"
+    if recovered_session_id:
+        return recovered_session_id
+
+    return _generate_session_id()
 
 def _get_pending_device_type(pending_command: dict[str, Any]) -> str | None:
     if not pending_command:
@@ -228,13 +278,14 @@ def _load_pending_command(db: Session, session_id: str) -> dict[str, Any]:
         "last_intent": row["last_intent"] or "device_control",
     }
 
-
 def _update_pending_command(
     db: Session,
     session_id: str,
     pending_command: dict[str, Any],
     clarification_turn: int,
     last_intent: str,
+    client_id: str | None = None,
+    source: str | None = None,
 ):
     db.execute(
         text(
@@ -244,6 +295,8 @@ def _update_pending_command(
                 pending_command = :pending_command,
                 clarification_turn = :clarification_turn,
                 last_intent = :last_intent,
+                client_id = COALESCE(:client_id, client_id),
+                source = COALESCE(:source, source),
                 updated_at = NOW()
             WHERE session_id = :session_id
             """
@@ -254,11 +307,37 @@ def _update_pending_command(
             "pending_command": json.dumps(pending_command, ensure_ascii=False),
             "clarification_turn": clarification_turn,
             "last_intent": last_intent,
+            "client_id": client_id,
+            "source": source,
         },
     )
 
     db.commit()
 
+def _attach_client_to_session(
+    db: Session,
+    session_id: str,
+    client_id: str | None,
+    source: str | None,
+):
+    db.execute(
+        text(
+            """
+            UPDATE dialogue_sessions
+            SET client_id = COALESCE(:client_id, client_id),
+                source = COALESCE(:source, source),
+                updated_at = NOW()
+            WHERE session_id = :session_id
+            """
+        ),
+        {
+            "session_id": session_id,
+            "client_id": client_id,
+            "source": source,
+        },
+    )
+
+    db.commit()
 
 def _clear_pending_command(
     db: Session,
@@ -364,6 +443,7 @@ async def _process_parse_flow(
     device_id: str,
     raw_text: str,
     source: str,
+    client_id: str | None = None,
 ):
     parser_mode = os.getenv("PARSER_MODE", "rule")
 
@@ -379,6 +459,13 @@ async def _process_parse_flow(
         parse_result = await parse_with_llm(**common_args)
     else:
         parse_result = await parse_natural_language(**common_args)
+
+    _attach_client_to_session(
+        db=db,
+        session_id=parse_result["session_id"],
+        client_id=client_id,
+        source=source,
+    )
 
     if parse_result.get("clarification_needed") is True:
         return {
@@ -463,7 +550,10 @@ async def process_command(
     db: Session = Depends(get_db),
 ):
     raw_text = _pick_raw_text(request)
-    session_id = _resolve_session_id(request)
+    session_id = _resolve_session_id(
+        db=db,
+        request=request,
+    )
     source = request.source or "frontend"
 
     pending_info = _try_load_pending_command(
@@ -495,10 +585,11 @@ async def process_command(
 
             parse_response = await _process_parse_flow(
                 db=db,
-                session_id=session_id,
+                session_id=_generate_session_id(),
                 device_id=request.device_id,
                 raw_text=raw_text,
                 source=source,
+                client_id=request.client_id,
             )
 
             parse_response["mode"] = "new_command_after_pending_cancelled"
@@ -528,6 +619,7 @@ async def process_command(
         device_id=request.device_id,
         raw_text=raw_text,
         source=source,
+        client_id=request.client_id,
     )
 
 @router.post("/process-clarify")
