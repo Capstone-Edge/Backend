@@ -22,6 +22,7 @@ class ClarifyRequest(BaseModel):
     session_id: str = Field(..., example="sess-x9y8z7")
     user_answer: str = Field(..., example="거실이랑 주방만 해줘")
     clarification_turn: int = Field(..., example=1)
+    pending_command: Optional[dict] = Field(None, description="이전 재질문에서 저장된 대기 명령")
 
 # 백엔드 -> 엣지 (재질문/최종 응답) - 기존 CommandResponse와 규격이 같으므로 재사용하거나 명시적으로 정의
 class ClarifyResponse(BaseModel):
