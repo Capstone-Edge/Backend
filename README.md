@@ -116,6 +116,7 @@ DB_PORT=3306
 DB_USER=root
 DB_PASSWORD=본인_MySQL_비밀번호
 DB_NAME=smart_home_aiot
+PARSER_MODE=llm
 ```
 
 실제 LLM API를 연결할 경우 아래 항목을 추가할 수 있습니다.
