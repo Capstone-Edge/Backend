@@ -241,6 +241,7 @@ DB_PORT=3306
 DB_USER=root
 DB_PASSWORD=your_password
 DB_NAME=smart_home_aiot
+PARSER_MODE=llm
 ```
 
 비밀번호는 본인 MySQL 환경에 맞게 수정한다.
