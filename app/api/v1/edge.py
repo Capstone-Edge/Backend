@@ -34,12 +34,12 @@ async def parse_command(
     request: CommandRequest,
     db: Session = Depends(get_db),
 ):
-    print(f"[/parse] Device: {request.device_id}, Text: {request.stt_text}")
+    print(f"[/parse] Device: {request.device_id}, Text: {request.raw_text}")
 
     parser_mode = os.getenv("PARSER_MODE", "rule")
 
     common_args = {
-        "raw_text": request.stt_text,
+        "raw_text": request.raw_text,
         "session_id": request.session_id,
         "device_id": request.device_id,
         "source": request.source or "edge",
