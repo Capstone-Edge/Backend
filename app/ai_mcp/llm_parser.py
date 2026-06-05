@@ -45,6 +45,127 @@ def _safe_json_loads(text: str) -> dict[str, Any]:
 
     return json.loads(cleaned)
 
+_ZONE_KEYWORDS: dict[str, str] = {
+    "거실": "living_room",
+    "주방": "kitchen",
+    "부엌": "kitchen",
+    "침실1": "bedroom1",
+    "침실 1": "bedroom1",
+    "침실2": "bedroom2",
+    "침실 2": "bedroom2",
+    "침실3": "bedroom3",
+    "침실 3": "bedroom3",
+    "세탁실": "laundry",
+    "전체": "all",
+    "집 전체": "all",
+    "모든 방": "all",
+}
+_CLEAN_KEYWORDS = ["청소", "돌려", "청소해", "쓸어", "닦아"]
+_VACUUM_GENERAL_KEYWORDS = ["청소기", "청소해", "청소 좀", "청소하", "더럽", "지저분"]
+
+# 청소 이외의 다른 기기 키워드 — 복합 명령이면 LLM에 위임
+_OTHER_DEVICE_KEYWORDS = [
+    "tv", "TV", "티비", "텔레비전",
+    "에어컨", "공기청정기", "조명", "오븐", "세탁기",
+]
+
+def _has_other_device(raw_text: str) -> bool:
+    return any(k in raw_text for k in _OTHER_DEVICE_KEYWORDS)
+
+_ZONE_DISPLAY: dict[str, str] = {
+    "living_room": "거실",
+    "kitchen": "주방",
+    "bedroom1": "침실1",
+    "bedroom2": "침실2",
+    "bedroom3": "침실3",
+    "laundry": "세탁실",
+    "all": "집 전체",
+}
+
+
+def _detect_vacuum_zones(raw_text: str) -> list[str]:
+    seen: set[str] = set()
+    zones: list[str] = []
+    for kor, eng in _ZONE_KEYWORDS.items():
+        if kor in raw_text and eng not in seen:
+            seen.add(eng)
+            zones.append(eng)
+    return zones
+
+
+def _detect_vacuum_zone(raw_text: str) -> str | None:
+    zones = _detect_vacuum_zones(raw_text)
+    return zones[0] if zones else None
+
+
+def _is_vacuum_zone_request(raw_text: str) -> bool:
+    has_clean = any(k in raw_text for k in _CLEAN_KEYWORDS)
+    has_zone = bool(_detect_vacuum_zones(raw_text))
+    return has_clean and has_zone
+
+
+def _is_vacuum_no_zone_request(raw_text: str) -> bool:
+    """구역 없이 청소를 요청하는 경우 → 재질문 필요"""
+    has_vacuum = any(k in raw_text for k in _VACUUM_GENERAL_KEYWORDS)
+    has_zone = bool(_detect_vacuum_zones(raw_text))
+    return has_vacuum and not has_zone
+
+
+def _build_vacuum_clarification_result(session_id: str) -> dict[str, Any]:
+    return {
+        "session_id": session_id,
+        "intent": "device_control",
+        "commands": [],
+        "clarification_needed": True,
+        "clarification_turn": 1,
+        "clarification_question": "어디를 청소할까요? (예: 거실, 주방, 침실, 전체)",
+        "pending_command": {
+            "device_name": "living_room_robot_vacuum",
+            "device_type": "robot_vacuum",
+            "inferred_intent": "vacuum_cleaning",
+            "context_trigger": "vacuum_no_zone",
+            "candidate_tools": ["robot_vacuum.set_zone", "robot_vacuum.set_action"],
+            "known_parameters": {"action": "start_cleaning"},
+            "missing_parameters": ["zone"],
+        },
+        "response_text": "어디를 청소할까요? (예: 거실, 주방, 침실, 전체)",
+    }
+
+
+def _build_vacuum_zone_result(session_id: str, zone: str | list[str]) -> dict[str, Any]:
+    if isinstance(zone, list) and len(zone) == 1:
+        zone = zone[0]
+    if isinstance(zone, list):
+        display = " · ".join(_ZONE_DISPLAY.get(z, z) for z in zone)
+    else:
+        display = _ZONE_DISPLAY.get(zone, zone)
+    return {
+        "session_id": session_id,
+        "intent": "device_control",
+        "commands": [
+            {
+                "step_order": 1,
+                "device_name": "living_room_robot_vacuum",
+                "device_type": "robot_vacuum",
+                "tool_name": "robot_vacuum.set_zone",
+                "parameters": {"zone": zone},
+            },
+            {
+                "step_order": 2,
+                "device_name": "living_room_robot_vacuum",
+                "device_type": "robot_vacuum",
+                "tool_name": "robot_vacuum.set_action",
+                "parameters": {"action": "start_cleaning"},
+            },
+        ],
+        "clarification_needed": False,
+        "clarification_turn": 0,
+        "clarification_question": None,
+        "pending_command": None,
+        "response_text": f"{display} 청소를 시작할게요.",
+    }
+
+
 def _is_ambiguous_hot_request(raw_text: str) -> bool:
     has_hot_expression = any(keyword in raw_text for keyword in ["덥", "더워", "시원하게"])
     has_temperature = re.search(r"\d{2}\s*도", raw_text) is not None
@@ -89,6 +210,32 @@ async def parse_with_llm(
     db=None,
 ) -> dict[str, Any]:
     effective_session_id = session_id or "mock-session-001"
+
+    if _is_vacuum_zone_request(raw_text) and not _has_other_device(raw_text):
+        zones = _detect_vacuum_zones(raw_text)
+        zone: str | list[str] = zones[0] if len(zones) == 1 else zones
+        forced_result = _build_vacuum_zone_result(effective_session_id, zone)
+        save_parse_session(
+            db=db,
+            session_id=effective_session_id,
+            intent=forced_result["intent"],
+            clarification_needed=False,
+            pending_command=None,
+            clarification_turn=0,
+        )
+        return forced_result
+
+    if _is_vacuum_no_zone_request(raw_text) and not _has_other_device(raw_text):
+        forced_result = _build_vacuum_clarification_result(effective_session_id)
+        save_parse_session(
+            db=db,
+            session_id=effective_session_id,
+            intent=forced_result["intent"],
+            clarification_needed=True,
+            pending_command=forced_result["pending_command"],
+            clarification_turn=1,
+        )
+        return forced_result
 
     if _is_ambiguous_hot_request(raw_text):
         forced_result = _build_hot_clarification_result(effective_session_id)

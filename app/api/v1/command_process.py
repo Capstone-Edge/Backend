@@ -474,6 +474,17 @@ async def _process_parse_flow(
             **parse_result,
         }
 
+    # 정보 조회 응답 (commands 없이 response_text만 있는 경우)
+    if not parse_result.get("commands"):
+        return {
+            "status": "info_response",
+            "mode": "parse",
+            "session_id": parse_result["session_id"],
+            "clarification_needed": False,
+            "response_text": parse_result.get("response_text", ""),
+            "parse_result": parse_result,
+        }
+
     execute_result = await _execute_from_parse_result(
         db=db,
         session_id=parse_result["session_id"],
