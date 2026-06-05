@@ -1,7 +1,10 @@
 import json
+import logging
 import os
 from typing import Any
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -508,11 +511,15 @@ async def _process_clarification_flow(
     user_answer: str,
     pending_info: dict[str, Any],
 ):
+    logger.info(f"[CLARIFY FLOW] 진입 — session_id={session_id}, user_answer={user_answer}")
+
     clarify_result = await clarify_natural_language(
         session_id=session_id,
         user_answer=user_answer,
         pending_command=pending_info["pending_command"],
     )
+
+    logger.info(f"[CLARIFY FLOW] clarify_result clarification_needed={clarify_result.get('clarification_needed')}, commands={clarify_result.get('commands')}")
 
     if clarify_result.get("clarification_needed") is True:
         _update_pending_command(
@@ -538,6 +545,11 @@ async def _process_clarification_flow(
         raw_user_input=user_answer,
         parse_result=clarify_result,
     )
+
+    from app.core.state_manager import broadcast_state, websocket_connections, device_states
+    logger.info(f"[CLARIFY BROADCAST] websocket_connections 수: {len(websocket_connections)}")
+    logger.info(f"[CLARIFY BROADCAST] device_states: {device_states.model_dump()}")
+    await broadcast_state()
 
     _clear_pending_command(
         db=db,

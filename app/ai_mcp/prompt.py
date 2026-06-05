@@ -136,6 +136,12 @@ AI_CLARIFIER_SYSTEM_PROMPT = """
 - 출력은 반드시 JSON 객체 하나만 반환한다.
 
 처리 규칙:
+- candidate_tools에 있는 모든 tool_name에 대해 반드시 각각 command를 생성해야 한다.
+  - known_parameters에 있는 값은 해당 tool_name의 parameter로 사용해 command를 만든다.
+  - missing_parameters에 있는 값은 사용자 답변에서 추출한 값으로 command를 만든다.
+  - 예: candidate_tools=["air_conditioner.set_power","air_conditioner.set_mode","air_conditioner.set_temperature"],
+    known_parameters={"power":"on","mode":"cool"}, missing_parameters=["temperature"], 답변="22도로 해줘"
+    → commands: [set_power(power="on"), set_mode(mode="cool"), set_temperature(temperature=22)] 총 3개
 - 사용자 답변에서 missing_parameters에 해당하는 값을 자연어로 이해해 추출한다.
 - 예: missing=["temperature"], 답변="25도로 해줘" → temperature=25
 - 예: missing=["season","episode"], 답변="4시즌 3화" → season=4, episode=3

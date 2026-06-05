@@ -1,6 +1,6 @@
 import json
 import os
-from anthropic import Anthropic
+from anthropic import AsyncAnthropic
 from app.ai_mcp.prompt import AI_CLARIFIER_SYSTEM_PROMPT
 
 CLARIFICATION_MAX_TURN = 5
@@ -23,7 +23,7 @@ async def clarify_natural_language(
             "response_text": "명확한 요청이 아닙니다. 처음부터 다시 말씀해 주세요.",
         }
 
-    client = Anthropic()
+    client = AsyncAnthropic()
     model_name = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 
     user_payload = {
@@ -31,7 +31,7 @@ async def clarify_natural_language(
         "pending_command": pending_command or {},
     }
 
-    message = client.messages.create(
+    message = await client.messages.create(
         model=model_name,
         max_tokens=1024,
         temperature=0,
@@ -65,6 +65,7 @@ async def clarify_natural_language(
             "response_text": "다시 한 번 말씀해 주시겠어요?",
         }
 
+    print(f"[CLARIFIER RAW] clarification_needed={result.get('clarification_needed')}, commands={result.get('commands')}, response_text={result.get('response_text')}", flush=True)
     result["session_id"] = session_id
     result.setdefault("intent", "device_control")
     result.setdefault("commands", [])
