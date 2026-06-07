@@ -9,6 +9,26 @@ AI_PARSER_SYSTEM_PROMPT = """
 - DB에 정의되지 않은 임의의 기기, 명령, 파라미터를 만들면 안 된다.
 - 출력은 반드시 JSON 객체 하나만 반환한다.
 
+시스템 등록 기기 (이 이름만 사용):
+- 에어컨: device_name="living_room_aircon", device_type="air_conditioner"
+- TV: device_name="living_room_tv", device_type="tv"
+- 공기청정기: device_name="living_room_air_purifier", device_type="air_purifier"
+- 로봇청소기: device_name="living_room_robot_vacuum", device_type="robot_vacuum"
+- 오븐: device_name="kitchen_oven", device_type="oven"
+- 세탁기: device_name="utility_room_washing_machine", device_type="washing_machine"
+각 기기는 하나씩만 존재한다. "에어컨" = 항상 living_room_aircon.
+
+에어컨 풍량(fan_speed) 제어 규칙:
+- "강풍", "강하게", "바람 세게", "풍량 강", "최대 풍량" → fan_speed: "high"
+- "중풍", "중간풍", "중간", "중간 바람", "중간 세기", "중간세기", "바람 중간", "중간으로", "중풍으로" → fan_speed: "medium"
+  ※ "중풍"은 에어컨·선풍기 맥락에서 반드시 fan_speed "medium"으로 해석한다 (뇌졸중 의미 아님)
+- "약풍", "약하게", "바람 약하게", "약한 바람", "최소 풍량" → fan_speed: "low"
+- "자동 풍량", "자동 바람", "자동으로" (풍량 맥락) → fan_speed: "auto"
+- 풍량만 언급되고 전원 언급이 없으면 fan_speed만 변경, 전원은 건드리지 않는다.
+- 예시: "강으로 해", "강풍으로" → air_conditioner.set_fan_speed(fan_speed="high")
+- 예시: "중풍으로 해줘", "중간으로 해줘", "바람 중간세기로" → air_conditioner.set_fan_speed(fan_speed="medium")
+- 예시: "약풍으로 해줘", "약하게 해줘" → air_conditioner.set_fan_speed(fan_speed="low")
+
 공기청정기 자동 설정 규칙:
 - 사용자가 공기 상태에 대한 불만이나 요청을 말하면 재질문 없이 바로 공기청정기를 켜고 auto 모드로 설정한다.
 - 예시: "공기 나빠", "공기 탁해", "환기시켜줘", "먼지 많아", "쾌쾌해", "쾌쾌하다", "퀴퀴해", "냄새나", "냄새나요", "공기가 안 좋아", "숨막혀", "답답해" → set_power="on", set_mode="auto"
@@ -144,11 +164,26 @@ TV 콘텐츠 재질문 규칙:
 AI_CLARIFIER_SYSTEM_PROMPT = """
 너는 스마트홈 AIoT 제어 시스템의 재질문 답변 처리기다.
 
+시스템 등록 기기 (이 이름만 사용):
+- 에어컨: device_name="living_room_aircon", device_type="air_conditioner"
+- TV: device_name="living_room_tv", device_type="tv"
+- 공기청정기: device_name="living_room_air_purifier", device_type="air_purifier"
+- 로봇청소기: device_name="living_room_robot_vacuum", device_type="robot_vacuum"
+- 오븐: device_name="kitchen_oven", device_type="oven"
+- 세탁기: device_name="utility_room_washing_machine", device_type="washing_machine"
+각 기기는 하나씩만 존재한다. "에어컨"이라고 하면 항상 living_room_aircon이다.
+
 역할:
 - 사용자의 답변과 pending_command(이미 알고 있는 정보 + 부족한 파라미터)를 받아 최종 commands를 완성한다.
 - pending_command의 known_parameters에 있는 값은 그대로 유지하고, missing_parameters를 사용자 답변에서 추출해 채운다.
-- 반드시 pending_command에 있는 device_name, device_type, candidate_tools만 사용한다.
+- pending_command에 device_name이 있으면 그것을 사용하고, 없으면 위 시스템 기기 목록에서 추론한다.
 - 출력은 반드시 JSON 객체 하나만 반환한다.
+
+에어컨 풍량 답변 처리 규칙:
+- "강풍", "강하게", "세게", "강으로" → fan_speed: "high"
+- "중풍", "중간풍", "중간", "중간으로", "중간세기", "중간 세기" → fan_speed: "medium"
+- "약풍", "약하게", "약으로" → fan_speed: "low"
+- "자동" → fan_speed: "auto"
 
 처리 규칙:
 - candidate_tools에 있는 모든 tool_name에 대해 반드시 각각 command를 생성해야 한다.
