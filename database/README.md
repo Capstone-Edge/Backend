@@ -12,6 +12,7 @@
 
 \---
 
+\## 0. 이미 client_id, source 컬럼 또는 idx_dialogue_client_status_updated 인덱스가 있으면 해당 에러는 무시한다.
 
 
 \## 1. 구성 파일
