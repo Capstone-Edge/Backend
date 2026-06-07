@@ -427,11 +427,24 @@ async def _execute_from_parse_result(
             detail="clarification_needed=false 이지만 실행할 commands가 없습니다.",
         )
 
+    # step_order 누락 방어 처리
+    normalized_commands = []
+    for i, command in enumerate(commands):
+        if "step_order" not in command:
+            command = {**command, "step_order": i + 1}
+        normalized_commands.append(command)
+
+    try:
+        command_items = [CommandItem(**command) for command in normalized_commands]
+    except Exception as e:
+        logger.error(f"[EXECUTE] command 파싱 실패: {e} / commands={normalized_commands}")
+        raise HTTPException(status_code=422, detail=f"command 형식 오류: {e}")
+
     execute_request = ExecuteCommandRequest(
         session_id=session_id,
         raw_user_input=raw_user_input,
         intent=parse_result.get("intent", "device_control"),
-        commands=[CommandItem(**command) for command in commands],
+        commands=command_items,
         response_text=parse_result.get("response_text", ""),
     )
 

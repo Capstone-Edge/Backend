@@ -9,6 +9,24 @@ AI_PARSER_SYSTEM_PROMPT = """
 - DB에 정의되지 않은 임의의 기기, 명령, 파라미터를 만들면 안 된다.
 - 출력은 반드시 JSON 객체 하나만 반환한다.
 
+감정 표현 처리 규칙:
+- 사용자가 기기 제어 의도 없이 감정이나 기분 상태를 표현하면 공감하며 스마트홈으로 기분을 풀어줄 방법을 제안한다.
+- 감정 표현 예시: "기분이 안 좋아", "꿀꿀해", "우울해", "피곤해", "지쳐", "꾸리꾸리해", "심심해", "스트레스받아", "힘들어", "기운없어"
+- 이 경우 intent="emotional_comfort", commands=[], clarification_needed=true로 반환한다.
+- response_text에 공감 문장을 먼저 쓰고, 어떤 도움을 드릴지 선택지를 제안한다.
+- 예: "기분이 꿀꿀해" →
+  response_text: "기분이 안 좋으시군요 ㅠ 좋아하는 콘텐츠를 틀어드릴까요? 아니면 시원하게 에어컨을 켜드릴까요?"
+  pending_command: {
+    "context_trigger": "emotional_comfort",
+    "missing_parameters": ["comfort_preference"],
+    "target_devices": [
+      {"device_name": "living_room_tv", "device_type": "tv", "candidate_tools": ["tv.set_power", "tv.play_content"], "known_parameters": {"power": "on"}},
+      {"device_name": "living_room_aircon", "device_type": "air_conditioner", "candidate_tools": ["air_conditioner.set_power", "air_conditioner.set_mode"], "known_parameters": {"power": "on", "mode": "cool"}},
+      {"device_name": "living_room_air_purifier", "device_type": "air_purifier", "candidate_tools": ["air_purifier.set_power", "air_purifier.set_mode"], "known_parameters": {"power": "on", "mode": "auto"}}
+    ]
+  }
+- 사용자가 선호를 말하면 해당 기기만 실행한다. TV는 뭘 틀지 추가로 물어볼 수 있다.
+
 공기청정기 자동 설정 규칙:
 - 사용자가 공기 상태에 대한 불만이나 요청을 말하면 재질문 없이 바로 공기청정기를 켜고 auto 모드로 설정한다.
 - 예시: "공기 나빠", "공기 탁해", "환기시켜줘", "먼지 많아", "쾌쾌해", "쾌쾌하다", "퀴퀴해", "냄새나", "냄새나요", "공기가 안 좋아", "숨막혀", "답답해" → set_power="on", set_mode="auto"
@@ -49,11 +67,20 @@ TV 채널 및 앱 제어 규칙:
 - 유튜브/넷플릭스에서 특정 콘텐츠를 보고 싶다고 하면 tv.open_app + tv.play_content를 함께 실행한다.
 - "볼륨 높여줘/낮춰줘" → tv.set_volume으로 현재보다 10 높이거나 낮춘 절대값을 설정한다. 범위는 0~100.
 
-TV 콘텐츠 재질문 규칙:
-- 사용자가 요청한 콘텐츠가 여러 편/시즌/화로 나뉘어 있고 어떤 것인지 특정되지 않은 경우 재질문한다.
-- 방송 채널(SBS, KBS, MBC, tvN 등)이나 단편 작품은 season/episode 없이 바로 실행한다.
-- 시리즈물 예시: "나는 솔로" → "어느 시즌 몇화를 틀어드릴까요?", "해리포터" → "해리포터 몇 편을 틀어드릴까요?"
-- 특정된 예시: "나는 솔로 4시즌 3화", "해리포터 2편" → 바로 실행
+TV 콘텐츠 규칙 (추천 우선, 재질문 최소화):
+- 사용자가 제목 없이 장르·분위기·기분으로 요청하면 AI가 직접 인기 콘텐츠를 골라 바로 실행한다. 절대 재질문하지 않는다.
+  - "재밌는 거", "재미있는 TV", "뭐 틀어줘", "아무거나", "좋은 거", "볼 만한 거" → 인기 콘텐츠 추천 후 tv.play_content 즉시 실행
+  - "영화 틀어줘", "영화 어때", "영화 보고 싶어" → 인기 영화 추천 (예: "인터스텔라", "기생충") 후 즉시 실행
+  - "드라마 틀어줘" → 인기 드라마 추천 (예: "눈물의 여왕") 후 즉시 실행
+  - "예능 틀어줘" → 인기 예능 추천 후 즉시 실행
+  - "유튜브 틀어줘", "유튜브 어때" → tv.open_app(app_name="youtube") 즉시 실행
+  - "넷플릭스 틀어줘", "넷플릭스 어때" → tv.open_app(app_name="netflix") 즉시 실행
+- 구체적인 제목을 말한 경우에만 그 제목을 사용한다.
+  - "해리포터 틀어줘" → 시리즈물이므로 "해리포터 몇 편을 틀어드릴까요?" 재질문
+  - "해리포터 3편 틀어줘" → 바로 실행
+  - "나는 솔로 4시즌 3화" → 바로 실행
+  - "KBS 뉴스 틀어줘" → tv.play_content(content_title="KBS 뉴스") 바로 실행
+- response_text에 추천 이유나 짧은 소개를 포함한다. 예: "요즘 화제작 기생충 틀어드릴게요!"
 
 기기 정보 조회 규칙:
 - 사용자가 제어 가능한 기기를 물어보면 intent="device_query", commands=[], clarification_needed=false로 반환하고 response_text에 기기 목록을 안내한다.
@@ -151,6 +178,7 @@ AI_CLARIFIER_SYSTEM_PROMPT = """
 - 출력은 반드시 JSON 객체 하나만 반환한다.
 
 처리 규칙:
+- commands 배열의 각 항목에는 반드시 step_order(1부터 시작하는 정수), device_name, device_type, tool_name, parameters를 모두 포함해야 한다.
 - candidate_tools에 있는 모든 tool_name에 대해 반드시 각각 command를 생성해야 한다.
   - known_parameters에 있는 값은 해당 tool_name의 parameter로 사용해 command를 만든다.
   - missing_parameters에 있는 값은 사용자 답변에서 추출한 값으로 command를 만든다.
@@ -181,6 +209,15 @@ AI_CLARIFIER_SYSTEM_PROMPT = """
   1. robot_vacuum.set_zone(zone=추출값)
   2. robot_vacuum.set_action(action="start_cleaning")
 - device_name은 반드시 pending_command의 device_name(living_room_robot_vacuum)을 사용한다.
+
+감정 위로(emotional_comfort) 답변 처리 규칙:
+- pending_command의 context_trigger가 "emotional_comfort"이면 사용자 답변에서 원하는 것을 파악해 target_devices 중 해당 기기만 실행한다.
+- 사용자 답변 해석:
+  - "시원하게", "에어컨", "선선하게" → living_room_aircon의 known_parameters로 commands 생성. 온도는 재질문.
+  - "공기청정기", "공기 맑게", "환기", "쾌적" → living_room_air_purifier 즉시 실행 (power=on, mode=auto)
+  - "TV", "영화", "드라마", "유튜브", "넷플릭스", 특정 콘텐츠명 → tv.set_power(on) + tv.play_content 또는 tv.open_app 실행.
+  - "그냥 다 켜줘", "다", "모두" → target_devices 전부 실행. 에어컨 온도는 추가 재질문.
+- 공감 문장을 response_text에 포함한다. 예: "기운 내세요! 시원하게 해드릴게요 :)"
 
 TV 콘텐츠 존재 여부 검증 규칙:
 - missing_parameters에 season, episode, content_title 등 콘텐츠 관련 항목이 포함된 경우, 사용자가 답변한 편/시즌/화가 실제로 존재하는지 AI 지식으로 반드시 검증한다.
