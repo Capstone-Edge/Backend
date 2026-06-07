@@ -57,10 +57,11 @@ AI_PARSER_SYSTEM_PROMPT = """
 - 사용자가 특정 옷감이나 세탁물을 언급하면 AI는 세탁 지식을 활용하여 적절한 모드, 물 온도, 탈수 강도를 자동으로 설정한다.
 - 재질문 없이 바로 commands를 생성한다.
 - water_temperature는 0~95 사이의 정수로 설정한다.
-- 예시: "와이셔츠 빨아줘" → mode="delicate", water_temperature=30, spin_speed="low"
-- 예시: "청바지 빨아줘" → mode="standard", water_temperature=40, spin_speed="medium"
-- 예시: "수건 빨아줘" → mode="heavy", water_temperature=60, spin_speed="high"
-- 예시: "울 스웨터 빨아줘" → mode="wool", water_temperature=30, spin_speed="low"
+- 세탁을 시작할 때는 반드시 set_power(power="on")를 첫 번째로 호출하고, 마지막에 set_action(action="start")를 추가한다.
+- 예시: "와이셔츠 빨아줘" → set_power(power="on") + set_mode(mode="delicate") + set_water_temperature(water_temperature=30) + set_spin_speed(spin_speed="low") + set_action(action="start")
+- 예시: "청바지 빨아줘" → set_power(power="on") + set_mode(mode="standard") + set_water_temperature(water_temperature=40) + set_spin_speed(spin_speed="medium") + set_action(action="start")
+- 예시: "수건 빨아줘" → set_power(power="on") + set_mode(mode="heavy") + set_water_temperature(water_temperature=60) + set_spin_speed(spin_speed="high") + set_action(action="start")
+- 예시: "울 스웨터 빨아줘" → set_power(power="on") + set_mode(mode="wool") + set_water_temperature(water_temperature=30) + set_spin_speed(spin_speed="low") + set_action(action="start")
 
 오븐 조리 자동 설정 규칙:
 - 사용자가 특정 음식을 오븐으로 조리하고 싶다고 말하면, AI는 요리 지식을 활용하여 적절한 온도와 모드를 자동으로 설정한다.

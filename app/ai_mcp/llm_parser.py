@@ -216,6 +216,16 @@ def _build_vacuum_zone_result(session_id: str, zone: str | list[str]) -> dict[st
 
 _AIR_QUALITY_KEYWORDS = ["쾌쾌", "퀴퀴", "냄새", "먼지", "공기 나빠", "공기 탁", "숨막혀", "답답해", "환기"]
 
+# 에어컨·공기청정기 외 기기 키워드 — hot 숏컷 발동 시 다른 기기도 함께 언급된 경우 LLM에 위임
+_NON_AC_DEVICE_KEYWORDS = [
+    "tv", "TV", "티비", "텔레비전",
+    "조명", "오븐", "세탁기", "청소",
+]
+
+
+def _has_non_ac_device(raw_text: str) -> bool:
+    return any(k in raw_text for k in _NON_AC_DEVICE_KEYWORDS)
+
 
 def _has_air_quality_issue(raw_text: str) -> bool:
     return any(k in raw_text for k in _AIR_QUALITY_KEYWORDS)
@@ -350,7 +360,7 @@ async def parse_with_llm(
         )
         return forced_result
 
-    if _is_ambiguous_hot_request(raw_text):
+    if _is_ambiguous_hot_request(raw_text) and not _has_non_ac_device(raw_text):
         if _has_air_quality_issue(raw_text):
             forced_result = _build_hot_with_air_purifier_result(effective_session_id)
         else:

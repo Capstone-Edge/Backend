@@ -135,6 +135,10 @@ def apply_command_to_state(state: dict[str, Any], tool_name: str, parameters: di
                 "pause": "stopped", "resume": "washing",
             }
             state["status"] = _wm_action_to_status.get(action, action)
+            if action in ("start", "resume"):
+                state["power"] = "on"
+            elif action == "stop":
+                state["power"] = "off"
     elif tool_name == "washing_machine.set_mode":
         if (v := parameters.get("mode")) is not None:
             state["mode"] = v
