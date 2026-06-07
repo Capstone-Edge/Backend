@@ -9,25 +9,6 @@ AI_PARSER_SYSTEM_PROMPT = """
 - DB에 정의되지 않은 임의의 기기, 명령, 파라미터를 만들면 안 된다.
 - 출력은 반드시 JSON 객체 하나만 반환한다.
 
-<<<<<<< HEAD
-감정 표현 처리 규칙:
-- 사용자가 기기 제어 의도 없이 감정이나 기분 상태를 표현하면 공감하며 스마트홈으로 기분을 풀어줄 방법을 제안한다.
-- 감정 표현 예시: "기분이 안 좋아", "꿀꿀해", "우울해", "피곤해", "지쳐", "꾸리꾸리해", "심심해", "스트레스받아", "힘들어", "기운없어"
-- 이 경우 intent="emotional_comfort", commands=[], clarification_needed=true로 반환한다.
-- response_text에 공감 문장을 먼저 쓰고, 어떤 도움을 드릴지 선택지를 제안한다.
-- 예: "기분이 꿀꿀해" →
-  response_text: "기분이 안 좋으시군요 ㅠ 좋아하는 콘텐츠를 틀어드릴까요? 아니면 시원하게 에어컨을 켜드릴까요?"
-  pending_command: {
-    "context_trigger": "emotional_comfort",
-    "missing_parameters": ["comfort_preference"],
-    "target_devices": [
-      {"device_name": "living_room_tv", "device_type": "tv", "candidate_tools": ["tv.set_power", "tv.play_content"], "known_parameters": {"power": "on"}},
-      {"device_name": "living_room_aircon", "device_type": "air_conditioner", "candidate_tools": ["air_conditioner.set_power", "air_conditioner.set_mode"], "known_parameters": {"power": "on", "mode": "cool"}},
-      {"device_name": "living_room_air_purifier", "device_type": "air_purifier", "candidate_tools": ["air_purifier.set_power", "air_purifier.set_mode"], "known_parameters": {"power": "on", "mode": "auto"}}
-    ]
-  }
-- 사용자가 선호를 말하면 해당 기기만 실행한다. TV는 뭘 틀지 추가로 물어볼 수 있다.
-=======
 시스템 등록 기기 (이 이름만 사용):
 - 에어컨: device_name="living_room_aircon", device_type="air_conditioner"
 - TV: device_name="living_room_tv", device_type="tv"
@@ -47,7 +28,24 @@ AI_PARSER_SYSTEM_PROMPT = """
 - 예시: "강으로 해", "강풍으로" → air_conditioner.set_fan_speed(fan_speed="high")
 - 예시: "중풍으로 해줘", "중간으로 해줘", "바람 중간세기로" → air_conditioner.set_fan_speed(fan_speed="medium")
 - 예시: "약풍으로 해줘", "약하게 해줘" → air_conditioner.set_fan_speed(fan_speed="low")
->>>>>>> 11fae8006311e43fa50c48379963c952f866321e
+
+감정 표현 처리 규칙:
+- 사용자가 기기 제어 의도 없이 감정이나 기분 상태를 표현하면 공감하며 스마트홈으로 기분을 풀어줄 방법을 제안한다.
+- 감정 표현 예시: "기분이 안 좋아", "꿀꿀해", "우울해", "피곤해", "지쳐", "꾸리꾸리해", "심심해", "스트레스받아", "힘들어", "기운없어"
+- 이 경우 intent="emotional_comfort", commands=[], clarification_needed=true로 반환한다.
+- response_text에 공감 문장을 먼저 쓰고, 어떤 도움을 드릴지 선택지를 제안한다.
+- 예: "기분이 꿀꿀해" →
+  response_text: "기분이 안 좋으시군요 ㅠ 좋아하는 콘텐츠를 틀어드릴까요? 아니면 시원하게 에어컨을 켜드릴까요? 둘 다 원하시면 '둘 다 해'라고 말씀해 주세요."
+  pending_command: {
+    "context_trigger": "emotional_comfort",
+    "missing_parameters": ["comfort_preference"],
+    "target_devices": [
+      {"device_name": "living_room_tv", "device_type": "tv", "candidate_tools": ["tv.set_power"], "known_parameters": {"power": "on"}},
+      {"device_name": "living_room_aircon", "device_type": "air_conditioner", "candidate_tools": ["air_conditioner.set_power", "air_conditioner.set_mode"], "known_parameters": {"power": "on", "mode": "cool"}},
+      {"device_name": "living_room_air_purifier", "device_type": "air_purifier", "candidate_tools": ["air_purifier.set_power", "air_purifier.set_mode"], "known_parameters": {"power": "on", "mode": "auto"}}
+    ]
+  }
+- 사용자가 "둘 다", "다 해줘", "전부", "모두" 등을 말하면 target_devices 전부를 known_parameters로 즉시 실행한다. 재질문 없이 바로 실행한다.
 
 공기청정기 자동 설정 규칙:
 - 사용자가 공기 상태에 대한 불만이나 요청을 말하면 재질문 없이 바로 공기청정기를 켜고 auto 모드로 설정한다.
@@ -231,10 +229,11 @@ AI_CLARIFIER_SYSTEM_PROMPT = """
 여러 기기 선택(target_devices) 답변 처리 규칙:
 - pending_command에 target_devices 리스트가 있으면 단일 device_name/device_type이 아닌 target_devices를 기준으로 commands를 생성한다.
 - 사용자 답변에서 선택한 기기를 파악한다:
-  - 특정 기기 이름 언급 (예: "에어컨", "공기청정기") → 해당 기기만 commands 생성
-  - "둘 다", "모두", "다" → target_devices의 모든 기기에 대해 commands 생성
+  - 특정 기기 이름 언급 (예: "에어컨", "공기청정기", "TV") → 해당 기기만 commands 생성
+  - "둘 다", "둘 다 해", "둘 다 해줘", "다 해줘", "전부", "전부 다", "모두", "모두 다", "다", "다 켜줘", "다 해" → target_devices의 모든 기기에 대해 commands 생성
   - 기기를 특정할 수 없으면 clarification_needed=true로 다시 재질문
 - 각 기기의 commands는 해당 기기의 known_parameters에 있는 값으로 candidate_tools 전체를 실행한다.
+- known_parameters에 없는 파라미터는 추가하지 않는다. 있는 것만 실행한다.
 - device_name과 device_type은 반드시 target_devices에 정의된 값만 사용한다. 임의로 만들면 안 된다.
 - 예: target_devices=[air_purifier, air_conditioner], 답변="둘 다" →
   air_purifier.set_power(power="on") + air_purifier.set_mode(mode="auto") + air_conditioner.set_power(power="on") + air_conditioner.set_mode(mode="fan") 총 4개 commands
@@ -249,12 +248,14 @@ AI_CLARIFIER_SYSTEM_PROMPT = """
 
 감정 위로(emotional_comfort) 답변 처리 규칙:
 - pending_command의 context_trigger가 "emotional_comfort"이면 사용자 답변에서 원하는 것을 파악해 target_devices 중 해당 기기만 실행한다.
+- 재질문은 절대 하지 않는다. 재질문 없이 known_parameters에 있는 값으로 바로 실행한다.
 - 사용자 답변 해석:
-  - "시원하게", "에어컨", "선선하게" → living_room_aircon의 known_parameters로 commands 생성. 온도는 재질문.
-  - "공기청정기", "공기 맑게", "환기", "쾌적" → living_room_air_purifier 즉시 실행 (power=on, mode=auto)
-  - "TV", "영화", "드라마", "유튜브", "넷플릭스", 특정 콘텐츠명 → tv.set_power(on) + tv.play_content 또는 tv.open_app 실행.
-  - "그냥 다 켜줘", "다", "모두" → target_devices 전부 실행. 에어컨 온도는 추가 재질문.
-- 공감 문장을 response_text에 포함한다. 예: "기운 내세요! 시원하게 해드릴게요 :)"
+  - "시원하게", "에어컨", "선선하게", "에어컨 켜줘" → living_room_aircon의 known_parameters(power=on, mode=cool)로 즉시 실행. 온도는 묻지 않는다.
+  - "공기청정기", "공기 맑게", "환기", "쾌적", "깨끗하게" → living_room_air_purifier 즉시 실행 (power=on, mode=auto)
+  - "TV", "영화", "드라마", "유튜브", "넷플릭스", "뭔가 틀어줘", "볼 거" → tv.set_power(power="on")만 실행. 콘텐츠는 별도 지정이 없으면 묻지 않는다.
+  - "둘 다", "둘 다 해", "둘 다 해줘", "다 해줘", "전부", "전부 다", "모두", "다 켜줘", "다 해", "모두 다" → target_devices에 있는 모든 기기를 재질문 없이 즉시 실행. 각 기기의 known_parameters를 그대로 사용한다.
+- known_parameters에 없는 파라미터(예: 온도, 콘텐츠 제목)는 추가 실행하지 말고 있는 것만 실행한다.
+- 공감 문장을 response_text에 포함한다. 예: "기운 내세요! TV 켜고 시원하게 해드릴게요 :)"
 
 TV 콘텐츠 존재 여부 검증 규칙:
 - missing_parameters에 season, episode, content_title 등 콘텐츠 관련 항목이 포함된 경우, 사용자가 답변한 편/시즌/화가 실제로 존재하는지 AI 지식으로 반드시 검증한다.
