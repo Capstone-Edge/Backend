@@ -30,6 +30,10 @@ from app.api.v1.routines import router as routines_router
 # 라우터 import (새로 만든 commands 라우터)
 from app.api.v1.commands import router as commands_router
 
+from app.core.ws_manager import ws_manager
+
+from app.api.v1.command_process import router as command_process_router
+
 # ─── 요청/응답 모델 (아직 분리 안 된 구형 모델들) ───────────────
 
 class ClarifyRequest(BaseModel):
@@ -44,6 +48,7 @@ app = FastAPI(title="SmartHome AIoT API")
 app.include_router(mcp_router) # 기존 MCP 라우터 등록
 app.include_router(routines_router) # 새로 만든 Routines 라우터 등록
 app.include_router(commands_router) # 새로 만든 Commands 라우터 등록
+app.include_router(command_process_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -120,23 +125,23 @@ async def execute_nlu_result(nlu: dict):
 
 # ─── 엔드포인트 (아직 분리 안 된 나머지 기능들) ───────────────────
 
-@app.post("/api/v1/dialogue/clarify")
-async def dialogue_clarify(req: ClarifyRequest):
-    """재질문 답변 처리"""
-    history = dm.get_history(req.session_id)
+# @app.post("/api/v1/dialogue/clarify")
+# async def dialogue_clarify(req: ClarifyRequest):
+#     """재질문 답변 처리"""
+#     history = dm.get_history(req.session_id)
 
-    nlu = await clarify_command(req.text, req.context_trigger, history)
+#     nlu = await clarify_command(req.text, req.context_trigger, history)
 
-    dm.update_session_history(req.session_id, "user", req.text)
-    dm.update_session_history(req.session_id, "assistant", json.dumps(nlu, ensure_ascii=False))
+#     dm.update_session_history(req.session_id, "user", req.text)
+#     dm.update_session_history(req.session_id, "assistant", json.dumps(nlu, ensure_ascii=False))
 
-    if not nlu.get("clarification_needed"):
-        dm.clear_pending_clarification(req.session_id)
-        await execute_nlu_result(nlu)
-    else:
-        dm.set_pending_clarification(req.session_id, nlu.get("context_trigger", ""))
+#     if not nlu.get("clarification_needed"):
+#         dm.clear_pending_clarification(req.session_id)
+#         await execute_nlu_result(nlu)
+#     else:
+#         dm.set_pending_clarification(req.session_id, nlu.get("context_trigger", ""))
 
-    return {"session_id": req.session_id, "nlu": nlu}
+#     return {"session_id": req.session_id, "nlu": nlu}
 
 @app.post("/api/v1/command/execute")
 async def command_execute(body: dict):
@@ -151,6 +156,28 @@ async def command_execute(body: dict):
 async def devices_state():
     """전체 기기 상태 반환"""
     return device_states.model_dump()
+
+
+@app.websocket("/ws/device-states")
+async def websocket_device_states(websocket: WebSocket):
+    """
+    Frontend 기기 상태 실시간 동기화용 WebSocket endpoint.
+
+    연결된 클라이언트는 /api/v1/commands/execute 실행 후
+    device_state_update 메시지를 수신한다.
+    """
+    await ws_manager.connect(websocket)
+
+    try:
+        while True:
+            await websocket.receive_text()
+
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+
+    except Exception:
+        ws_manager.disconnect(websocket)
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -167,4 +194,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
+    
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+

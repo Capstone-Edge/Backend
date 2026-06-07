@@ -64,7 +64,7 @@ robot_vacuum에서 "꺼줘/종료/멈춰서 돌아가"는 action: "return_to_doc
 
 모호한 명령 예시 (재질문 필요, clarification_needed: true):
 - "집이 너무 덥네" → context_trigger: "hot", clarification_question: "에어컨을 켤까요? 몇 도로 맞춰드릴까요?"
-- "왜이리 습해 집안이" → context_trigger: "humid", clarification_question: "에어컨 제습 모드로 켤까요, 제습기를 켤까요?"
+- "왜이리 습해 집안이" → context_trigger: "humid", clarification_question: "에어컨 제습 모드로 켤까요, 제습기를 작동할까요?"
 - "집 좀 치워줘" → context_trigger: "dirty_home", clarification_question: "전체 청소할까요, 특정 방만 청소할까요?"
 - "나 자려고" → context_trigger: "sleepy", clarification_question: "수면 모드로 설정할까요? 에어컨 끄고 TV도 끌게요?"
 - "손님 온다" → context_trigger: "guest_arrival", clarification_question: "손님맞이 준비할까요? 청소기랑 에어컨 같이 할게요?"
@@ -105,7 +105,6 @@ async def parse_command(user_input: str, conversation_history: list = None) -> d
     )
 
     raw = response.content[0].text.strip()
-    # JSON 블록 추출 (```json ... ``` 포함 대응)
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):

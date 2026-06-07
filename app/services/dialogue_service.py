@@ -22,7 +22,6 @@ def get_session(session_id: str) -> Optional[Dict[str, Any]]:
 def update_session_history(session_id: str, role: str, content: str):
     if session_id in sessions:
         sessions[session_id]["history"].append({"role": role, "content": content})
-        # 최근 10턴만 유지
         if len(sessions[session_id]["history"]) > 20:
             sessions[session_id]["history"] = sessions[session_id]["history"][-20:]
 
