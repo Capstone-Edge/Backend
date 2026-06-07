@@ -11,7 +11,7 @@ AI_PARSER_SYSTEM_PROMPT = """
 
 공기청정기 자동 설정 규칙:
 - 사용자가 공기 상태에 대한 불만이나 요청을 말하면 재질문 없이 바로 공기청정기를 켜고 auto 모드로 설정한다.
-- 예시: "공기 나빠", "공기 탁해", "환기시켜줘", "먼지 많아" → set_power="on", set_mode="auto"
+- 예시: "공기 나빠", "공기 탁해", "환기시켜줘", "먼지 많아", "쾌쾌해", "쾌쾌하다", "퀴퀴해", "냄새나", "냄새나요", "공기가 안 좋아", "숨막혀", "답답해" → set_power="on", set_mode="auto"
 - 예시: "조용하게 틀어줘" → set_power="on", set_mode="sleep"
 - 예시: "공기청정기 세게 틀어줘" → set_power="on", set_fan_speed="high"
 
@@ -86,6 +86,21 @@ TV 콘텐츠 재질문 규칙:
 - "집이 너무 덥네"의 pending_command는 known_parameters에 {"power":"on","mode":"cool"}을 넣고, missing_parameters에 ["temperature"]를 넣는다.
 - 사용자가 명시하지 않은 temperature=20, fan_speed=high 같은 기본값을 임의로 만들면 안 된다.
 
+여러 기기 선택 재질문 규칙:
+- 사용자 의도에 맞는 기기가 두 가지 이상 후보일 경우, pending_command에 target_devices 리스트를 사용한다.
+- 단일 device_name/device_type이 아니라 후보 기기 정보를 target_devices 배열로 나열한다.
+- 사용자가 "둘 다"라고 답할 경우 clarifier가 모든 target_devices에 대해 commands를 생성할 수 있도록 각 기기의 device_name, device_type, candidate_tools, known_parameters를 반드시 포함한다.
+- 예시: "환기시켜줄래" (에어컨 vs 공기청정기 모호) →
+  clarification_question: "에어컨으로 환기를 시켜드릴까요, 공기청정기를 켜드릴까요, 아니면 둘 다 켜드릴까요?"
+  pending_command: {
+    "inferred_intent": "ventilation",
+    "missing_parameters": ["device_choice"],
+    "target_devices": [
+      {"device_name": "living_room_aircon", "device_type": "air_conditioner", "candidate_tools": ["air_conditioner.set_power", "air_conditioner.set_mode"], "known_parameters": {"power": "on", "mode": "fan"}},
+      {"device_name": "living_room_air_purifier", "device_type": "air_purifier", "candidate_tools": ["air_purifier.set_power", "air_purifier.set_mode"], "known_parameters": {"power": "on", "mode": "auto"}}
+    ]
+  }
+
 출력 형식:
 {
   "intent": "device_control | multi_device_control | routine_control | device_query",
@@ -148,6 +163,17 @@ AI_CLARIFIER_SYSTEM_PROMPT = """
 - 예: missing=["season","episode"], 답변="두 번째 시즌 첫 화" → season=2, episode=1
 - 값을 추출할 수 없으면 clarification_needed=true로 다시 재질문한다.
 
+여러 기기 선택(target_devices) 답변 처리 규칙:
+- pending_command에 target_devices 리스트가 있으면 단일 device_name/device_type이 아닌 target_devices를 기준으로 commands를 생성한다.
+- 사용자 답변에서 선택한 기기를 파악한다:
+  - 특정 기기 이름 언급 (예: "에어컨", "공기청정기") → 해당 기기만 commands 생성
+  - "둘 다", "모두", "다" → target_devices의 모든 기기에 대해 commands 생성
+  - 기기를 특정할 수 없으면 clarification_needed=true로 다시 재질문
+- 각 기기의 commands는 해당 기기의 known_parameters에 있는 값으로 candidate_tools 전체를 실행한다.
+- device_name과 device_type은 반드시 target_devices에 정의된 값만 사용한다. 임의로 만들면 안 된다.
+- 예: target_devices=[air_purifier, air_conditioner], 답변="둘 다" →
+  air_purifier.set_power(power="on") + air_purifier.set_mode(mode="auto") + air_conditioner.set_power(power="on") + air_conditioner.set_mode(mode="fan") 총 4개 commands
+
 로봇청소기 구역(zone) 답변 처리 규칙:
 - missing_parameters에 ["zone"]이 있으면 사용자 답변에서 구역을 추출한다.
 - 구역명 매핑: 거실→living_room, 주방/부엌→kitchen, 침실1→bedroom1, 침실2→bedroom2, 침실3→bedroom3, 세탁실→laundry, 전체/집 전체/모든 방→all
@@ -155,6 +181,15 @@ AI_CLARIFIER_SYSTEM_PROMPT = """
   1. robot_vacuum.set_zone(zone=추출값)
   2. robot_vacuum.set_action(action="start_cleaning")
 - device_name은 반드시 pending_command의 device_name(living_room_robot_vacuum)을 사용한다.
+
+TV 콘텐츠 존재 여부 검증 규칙:
+- missing_parameters에 season, episode, content_title 등 콘텐츠 관련 항목이 포함된 경우, 사용자가 답변한 편/시즌/화가 실제로 존재하는지 AI 지식으로 반드시 검증한다.
+- 존재하지 않는 콘텐츠를 요청하면 commands를 생성하지 않고 clarification_needed=true를 반환한다.
+- response_text와 clarification_question에 "존재하지 않습니다"와 함께 실제 범위를 안내한다.
+  - 예: "해리포터 100편은 존재하지 않습니다. 해리포터는 1~8편까지 있습니다. 몇 편을 틀어드릴까요?"
+  - 예: "나는 솔로 50시즌은 존재하지 않습니다. 현재 24시즌까지 방영되었습니다. 몇 시즌을 틀어드릴까요?"
+- pending_command는 입력받은 값 그대로 유지해 사용자가 다시 선택할 수 있게 한다.
+- 존재 여부가 확실하지 않은 작품(잘 알려지지 않은 콘텐츠 등)은 검증 없이 정상 실행한다.
 
 정상 완성 시 출력 형식:
 {

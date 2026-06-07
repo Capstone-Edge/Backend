@@ -471,9 +471,25 @@ async def _process_parse_flow(
     )
 
     if parse_result.get("clarification_needed") is True:
+        # 즉시 실행 가능한 commands가 있으면 먼저 실행 후 재질문
+        immediate_commands = parse_result.get("commands", [])
+        execute_result = None
+        if immediate_commands:
+            try:
+                execute_result = await _execute_from_parse_result(
+                    db=db,
+                    session_id=parse_result["session_id"],
+                    raw_user_input=raw_text,
+                    parse_result=parse_result,
+                )
+                logger.info(f"[PARSE FLOW] 즉시 실행 완료: {[c['tool_name'] for c in immediate_commands]}")
+            except Exception as e:
+                logger.error(f"[PARSE FLOW] 즉시 실행 실패: {e}")
+                # 실행 실패해도 재질문은 계속 진행
         return {
             "status": "waiting_clarification",
             "mode": "parse",
+            "execute_result": execute_result,
             **parse_result,
         }
 

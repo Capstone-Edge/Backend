@@ -166,6 +166,13 @@ def _build_vacuum_zone_result(session_id: str, zone: str | list[str]) -> dict[st
     }
 
 
+_AIR_QUALITY_KEYWORDS = ["쾌쾌", "퀴퀴", "냄새", "먼지", "공기 나빠", "공기 탁", "숨막혀", "답답해", "환기"]
+
+
+def _has_air_quality_issue(raw_text: str) -> bool:
+    return any(k in raw_text for k in _AIR_QUALITY_KEYWORDS)
+
+
 def _is_ambiguous_hot_request(raw_text: str) -> bool:
     has_hot_expression = any(keyword in raw_text for keyword in ["덥", "더워", "시원하게"])
     has_temperature = re.search(r"\d{2}\s*도", raw_text) is not None
@@ -199,6 +206,49 @@ def _build_hot_clarification_result(effective_session_id: str) -> dict[str, Any]
             "missing_parameters": ["temperature"],
         },
         "response_text": "에어컨을 몇 도로 맞춰드릴까요?",
+    }
+
+
+def _build_hot_with_air_purifier_result(effective_session_id: str) -> dict[str, Any]:
+    return {
+        "session_id": effective_session_id,
+        "intent": "multi_device_control",
+        "commands": [
+            {
+                "step_order": 1,
+                "device_name": "living_room_air_purifier",
+                "device_type": "air_purifier",
+                "tool_name": "air_purifier.set_power",
+                "parameters": {"power": "on"},
+            },
+            {
+                "step_order": 2,
+                "device_name": "living_room_air_purifier",
+                "device_type": "air_purifier",
+                "tool_name": "air_purifier.set_mode",
+                "parameters": {"mode": "auto"},
+            },
+        ],
+        "clarification_needed": True,
+        "clarification_turn": 1,
+        "clarification_question": "에어컨을 몇 도로 맞춰드릴까요?",
+        "pending_command": {
+            "device_name": "living_room_aircon",
+            "device_type": "air_conditioner",
+            "inferred_intent": "cooling",
+            "context_trigger": "hot",
+            "candidate_tools": [
+                "air_conditioner.set_power",
+                "air_conditioner.set_mode",
+                "air_conditioner.set_temperature",
+            ],
+            "known_parameters": {
+                "power": "on",
+                "mode": "cool",
+            },
+            "missing_parameters": ["temperature"],
+        },
+        "response_text": "공기청정기를 켰어요. 에어컨은 몇 도로 맞춰드릴까요?",
     }
 
 
@@ -238,7 +288,10 @@ async def parse_with_llm(
         return forced_result
 
     if _is_ambiguous_hot_request(raw_text):
-        forced_result = _build_hot_clarification_result(effective_session_id)
+        if _has_air_quality_issue(raw_text):
+            forced_result = _build_hot_with_air_purifier_result(effective_session_id)
+        else:
+            forced_result = _build_hot_clarification_result(effective_session_id)
 
         save_parse_session(
             db=db,
