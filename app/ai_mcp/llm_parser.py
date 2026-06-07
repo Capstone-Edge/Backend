@@ -45,6 +45,54 @@ def _safe_json_loads(text: str) -> dict[str, Any]:
 
     return json.loads(cleaned)
 
+# 에어컨 풍량 키워드 → fan_speed 값
+_AC_FAN_SPEED_MAP: dict[str, str] = {
+    "강풍으로": "high", "강풍": "high", "강하게": "high", "바람 세게": "high",
+    "중풍으로": "medium", "중풍": "medium", "중간풍": "medium", "중간으로": "medium",
+    "중간 바람": "medium", "중간세기": "medium", "중간 세기": "medium", "중간": "medium",
+    "약풍으로": "low", "약풍": "low", "약하게": "low", "바람 약하게": "low",
+    "자동 풍량": "auto", "자동풍": "auto",
+}
+_AC_FAN_CONTEXT_KEYWORDS = ["에어컨", "바람 세기", "풍량", "풍속", "바람 속도", "팬 속도", "팬"]
+_AC_FAN_ACTION_KEYWORDS = ["강풍", "중풍", "약풍", "중간풍", "자동풍"]
+
+
+def _detect_ac_fan_speed(raw_text: str) -> str | None:
+    for keyword, speed in _AC_FAN_SPEED_MAP.items():
+        if keyword in raw_text:
+            return speed
+    return None
+
+
+def _is_ac_fan_speed_request(raw_text: str) -> bool:
+    fan_speed = _detect_ac_fan_speed(raw_text)
+    if not fan_speed:
+        return False
+    has_ac_ctx = any(k in raw_text for k in _AC_FAN_CONTEXT_KEYWORDS)
+    has_fan_term = any(k in raw_text for k in _AC_FAN_ACTION_KEYWORDS)
+    return has_ac_ctx or has_fan_term
+
+
+def _build_ac_fan_speed_result(session_id: str, fan_speed: str) -> dict[str, Any]:
+    label = {"high": "강풍", "medium": "중풍", "low": "약풍", "auto": "자동"}.get(fan_speed, fan_speed)
+    return {
+        "session_id": session_id,
+        "intent": "device_control",
+        "commands": [{
+            "step_order": 1,
+            "device_name": "living_room_aircon",
+            "device_type": "air_conditioner",
+            "tool_name": "air_conditioner.set_fan_speed",
+            "parameters": {"fan_speed": fan_speed},
+        }],
+        "clarification_needed": False,
+        "clarification_turn": 0,
+        "clarification_question": None,
+        "pending_command": None,
+        "response_text": f"거실 에어컨 풍량을 {label}으로 설정할게요.",
+    }
+
+
 _ZONE_KEYWORDS: dict[str, str] = {
     "거실": "living_room",
     "주방": "kitchen",
@@ -260,6 +308,21 @@ async def parse_with_llm(
     db=None,
 ) -> dict[str, Any]:
     effective_session_id = session_id or "mock-session-001"
+
+    # 에어컨 풍량 명령 사전 처리 — "중풍" 등 LLM이 오해하기 쉬운 표현 대응
+    if _is_ac_fan_speed_request(raw_text) and not _has_other_device(raw_text):
+        fan_speed = _detect_ac_fan_speed(raw_text)
+        if fan_speed:
+            forced_result = _build_ac_fan_speed_result(effective_session_id, fan_speed)
+            save_parse_session(
+                db=db,
+                session_id=effective_session_id,
+                intent=forced_result["intent"],
+                clarification_needed=False,
+                pending_command=None,
+                clarification_turn=0,
+            )
+            return forced_result
 
     if _is_vacuum_zone_request(raw_text) and not _has_other_device(raw_text):
         zones = _detect_vacuum_zones(raw_text)

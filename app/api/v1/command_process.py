@@ -171,17 +171,36 @@ def _detect_device_type_from_text(raw_text: str) -> str | None:
     return None
 
 
+def _detect_all_device_types_from_text(raw_text: str) -> list[str]:
+    normalized = raw_text.strip()
+    detected: list[str] = []
+    for device_type, keywords in DEVICE_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in normalized:
+                detected.append(device_type)
+                break
+    return detected
+
+
 def _is_new_command_different_from_pending(
     raw_text: str,
     pending_command: dict[str, Any],
 ) -> bool:
     pending_device_type = _get_pending_device_type(pending_command)
-    detected_device_type = _detect_device_type_from_text(raw_text)
+    all_detected = _detect_all_device_types_from_text(raw_text)
 
-    if not pending_device_type or not detected_device_type:
+    if not all_detected:
         return False
 
-    return detected_device_type != pending_device_type
+    # 여러 기기가 감지되면 복합 명령 → 새 파서로 전환
+    if len(all_detected) > 1:
+        return True
+
+    # pending 기기를 특정할 수 없는 상태(unknown pending)이고 사용자가 명확한 기기를 언급하면 새 명령으로 처리
+    if not pending_device_type:
+        return True
+
+    return all_detected[0] != pending_device_type
 
 def _try_load_pending_command(
     db: Session,
@@ -427,11 +446,24 @@ async def _execute_from_parse_result(
             detail="clarification_needed=false 이지만 실행할 commands가 없습니다.",
         )
 
+    # step_order 누락 방어 처리
+    normalized_commands = []
+    for i, command in enumerate(commands):
+        if "step_order" not in command:
+            command = {**command, "step_order": i + 1}
+        normalized_commands.append(command)
+
+    try:
+        command_items = [CommandItem(**command) for command in normalized_commands]
+    except Exception as e:
+        logger.error(f"[EXECUTE] command 파싱 실패: {e} / commands={normalized_commands}")
+        raise HTTPException(status_code=422, detail=f"command 형식 오류: {e}")
+
     execute_request = ExecuteCommandRequest(
         session_id=session_id,
         raw_user_input=raw_user_input,
         intent=parse_result.get("intent", "device_control"),
-        commands=[CommandItem(**command) for command in commands],
+        commands=command_items,
         response_text=parse_result.get("response_text", ""),
     )
 

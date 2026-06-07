@@ -36,112 +36,136 @@ def normalize_state_data(state_data):
 
 def apply_command_to_state(state: dict[str, Any], tool_name: str, parameters: dict[str, Any]):
     """
-    MVP 기준 상태 업데이트 로직.
     tool_name별로 parameters 값을 device_states.state_data에 반영한다.
+    parameters 키 누락 시 해당 필드는 업데이트 건너뜀 (KeyError 방지).
     """
 
     # 공통 전원
     if tool_name.endswith(".set_power"):
-        state["power"] = parameters["power"]
-        if tool_name == "tv.set_power" and parameters["power"] == "on":
-            state["volume"] = 10
+        if (power := parameters.get("power")) is not None:
+            state["power"] = power
+            if tool_name == "tv.set_power" and power == "on":
+                state["volume"] = state.get("volume", 10)
 
     # 에어컨
     elif tool_name == "air_conditioner.set_temperature":
-        temp = int(parameters["temperature"])
-        if not (18 <= temp <= 30):
-            raise ValueError(f"에어컨 온도는 18~30°C 범위만 가능합니다. (요청값: {temp}°C)")
-        state["temperature"] = temp
+        if (temp_raw := parameters.get("temperature")) is not None:
+            temp = int(temp_raw)
+            if not (18 <= temp <= 30):
+                raise ValueError(f"에어컨 온도는 18~30°C 범위만 가능합니다. (요청값: {temp}°C)")
+            state["temperature"] = temp
     elif tool_name == "air_conditioner.set_mode":
-        state["mode"] = parameters["mode"]
+        if (mode := parameters.get("mode")) is not None:
+            state["mode"] = mode
     elif tool_name == "air_conditioner.set_fan_speed":
-        state["fan_speed"] = parameters["fan_speed"]
+        if (fan_speed := parameters.get("fan_speed")) is not None:
+            state["fan_speed"] = fan_speed
     elif tool_name == "air_conditioner.set_louver_angle":
-        state["louver_angle"] = parameters["louver_angle"]
+        if (angle := parameters.get("louver_angle")) is not None:
+            state["louver_angle"] = angle
     elif tool_name == "air_conditioner.set_timer":
-        state["timer"] = {
-            "delay_minutes": parameters["delay_minutes"]
-        }
+        if (delay := parameters.get("delay_minutes")) is not None:
+            state["timer"] = {"delay_minutes": delay}
 
     # 조명
     elif tool_name == "light.set_brightness":
-        state["brightness"] = parameters["brightness"]
+        if (v := parameters.get("brightness")) is not None:
+            state["brightness"] = v
     elif tool_name == "light.set_color":
-        state["color"] = parameters["color"]
+        if (v := parameters.get("color")) is not None:
+            state["color"] = v
     elif tool_name == "light.set_color_temperature":
-        state["color_temperature"] = parameters["color_temperature"]
+        if (v := parameters.get("color_temperature")) is not None:
+            state["color_temperature"] = v
     elif tool_name == "light.set_scene":
-        state["scene_name"] = parameters["scene_name"]
+        if (v := parameters.get("scene_name")) is not None:
+            state["scene_name"] = v
 
     # TV
     elif tool_name == "tv.set_volume":
-        state["volume"] = parameters["volume"]
-    elif tool_name == "tv.set_volume":
-        state["volume"] = parameters["volume"]
+        if (v := parameters.get("volume")) is not None:
+            state["volume"] = v
     elif tool_name == "tv.set_channel":
-        state["power"] = "on"
-        state["channel"] = str(parameters["channel"])
-        state["content_name"] = None
+        if (v := parameters.get("channel")) is not None:
+            state["power"] = "on"
+            state["channel"] = str(v)
+            state["content_name"] = None
     elif tool_name == "tv.open_app":
-        state["power"] = "on"
-        state["app_name"] = parameters["app_name"]
-        state["content_name"] = parameters["app_name"]
+        if (v := parameters.get("app_name")) is not None:
+            state["power"] = "on"
+            state["app_name"] = v
+            state["content_name"] = v
     elif tool_name == "tv.play_content":
-        state["power"] = "on"
-        state["content_name"] = parameters["content_title"]
-        if "app_name" in parameters:
-            state["app_name"] = parameters["app_name"]
+        if (v := parameters.get("content_title")) is not None:
+            state["power"] = "on"
+            state["content_name"] = v
+            if (app := parameters.get("app_name")) is not None:
+                state["app_name"] = app
 
     # 오븐
     elif tool_name == "oven.set_temperature":
-        state["target_temp"] = parameters["target_temp"]
+        if (v := parameters.get("target_temp")) is not None:
+            state["target_temp"] = v
     elif tool_name == "oven.set_mode":
-        state["mode"] = parameters["mode"]
+        if (v := parameters.get("mode")) is not None:
+            state["mode"] = v
     elif tool_name == "oven.set_fan_speed":
-        state["fan_speed"] = parameters["fan_speed"]
+        if (v := parameters.get("fan_speed")) is not None:
+            state["fan_speed"] = v
     elif tool_name == "oven.set_steam":
-        state["steam"] = parameters["steam"]
+        if (v := parameters.get("steam")) is not None:
+            state["steam"] = v
     elif tool_name == "oven.set_probe_target":
-        state["probe_temp"] = parameters["probe_target"]
+        if (v := parameters.get("probe_target")) is not None:
+            state["probe_temp"] = v
 
     # 공기청정기
     elif tool_name == "air_purifier.set_mode":
-        state["mode"] = parameters["mode"]
+        if (v := parameters.get("mode")) is not None:
+            state["mode"] = v
     elif tool_name == "air_purifier.set_fan_speed":
-        state["fan_speed"] = parameters["fan_speed"]
+        if (v := parameters.get("fan_speed")) is not None:
+            state["fan_speed"] = v
 
     # 세탁기
     elif tool_name == "washing_machine.set_action":
-        _wm_action_to_status = {
-            "start":   "washing",
-            "stop":    "stopped",
-            "pause":   "stopped",
-            "resume":  "washing",
-        }
-        state["status"] = _wm_action_to_status.get(parameters["action"], parameters["action"])
+        if (action := parameters.get("action")) is not None:
+            _wm_action_to_status = {
+                "start": "washing", "stop": "stopped",
+                "pause": "stopped", "resume": "washing",
+            }
+            state["status"] = _wm_action_to_status.get(action, action)
     elif tool_name == "washing_machine.set_mode":
-        state["mode"] = parameters["mode"]
+        if (v := parameters.get("mode")) is not None:
+            state["mode"] = v
     elif tool_name == "washing_machine.set_spin_speed":
-        state["spin_speed"] = parameters["spin_speed"]
+        if (v := parameters.get("spin_speed")) is not None:
+            state["spin_speed"] = v
     elif tool_name == "washing_machine.set_water_temperature":
-        state["water_temperature"] = parameters["water_temperature"]
+        if (v := parameters.get("water_temperature")) is not None:
+            state["water_temperature"] = v
     elif tool_name == "washing_machine.set_reservation":
-        state["reservation_time"] = parameters["start_time"]
+        if (v := parameters.get("start_time")) is not None:
+            state["reservation_time"] = v
 
     # 로봇청소기
     elif tool_name == "robot_vacuum.set_action":
-        _action_to_status = {
-            "start_cleaning": "cleaning",
-            "pause": "paused",
-            "return_to_dock": "returning",
-        }
-        state["status"] = _action_to_status.get(parameters["action"], parameters["action"])
+        if (action := parameters.get("action")) is not None:
+            _action_to_status = {
+                "start_cleaning": "cleaning",
+                "pause": "paused",
+                "return_to_dock": "returning",
+            }
+            state["status"] = _action_to_status.get(action, action)
     elif tool_name == "robot_vacuum.set_zone":
-        state["zone"] = parameters["zone"]
+        if (v := parameters.get("zone")) is not None:
+            state["zone"] = v
     elif tool_name == "robot_vacuum.set_suction_power":
-        state["suction_power"] = parameters["suction_power"]
+        if (v := parameters.get("suction_power")) is not None:
+            state["suction_power"] = v
     elif tool_name == "robot_vacuum.set_cleaning_mode":
-        state["cleaning_mode"] = parameters["cleaning_mode"]
+        if (v := parameters.get("cleaning_mode")) is not None:
+            state["cleaning_mode"] = v
 
     else:
         raise ValueError(f"Unsupported tool_name: {tool_name}")
