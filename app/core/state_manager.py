@@ -13,6 +13,7 @@ class AirConditionerState(BaseModel):
 
 class TVState(BaseModel):
     power: str = "off"
+    volume: int = 10
     channel: Optional[str] = None
     content_name: Optional[str] = None
 
@@ -66,6 +67,14 @@ class WashingMachineState(BaseModel):
     error: Optional[str] = None
 
 
+class LightState(BaseModel):
+    power: str = "off"
+    brightness: int = 70
+    color: str = "white"
+    color_temperature: int = 4000
+    scene_name: Optional[str] = "relax"
+
+
 # --- 전역 상태 묶음 ---
 
 class DeviceStates(BaseModel):
@@ -73,9 +82,9 @@ class DeviceStates(BaseModel):
     tv: TVState = TVState()
     air_purifier: AirPurifierState = AirPurifierState()
     robot_vacuum: RobotVacuumState = RobotVacuumState()
-    # 새로 추가된 기기 연결
     oven: OvenState = OvenState()
     washing_machine: WashingMachineState = WashingMachineState()
+    light: LightState = LightState()
 
 # 전역 상태 싱글톤
 device_states = DeviceStates()

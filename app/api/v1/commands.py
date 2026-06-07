@@ -43,10 +43,15 @@ def apply_command_to_state(state: dict[str, Any], tool_name: str, parameters: di
     # 공통 전원
     if tool_name.endswith(".set_power"):
         state["power"] = parameters["power"]
+        if tool_name == "tv.set_power" and parameters["power"] == "on":
+            state["volume"] = 10
 
     # 에어컨
     elif tool_name == "air_conditioner.set_temperature":
-        state["temperature"] = parameters["temperature"]
+        temp = int(parameters["temperature"])
+        if not (18 <= temp <= 30):
+            raise ValueError(f"에어컨 온도는 18~30°C 범위만 가능합니다. (요청값: {temp}°C)")
+        state["temperature"] = temp
     elif tool_name == "air_conditioner.set_mode":
         state["mode"] = parameters["mode"]
     elif tool_name == "air_conditioner.set_fan_speed":
@@ -71,12 +76,19 @@ def apply_command_to_state(state: dict[str, Any], tool_name: str, parameters: di
     # TV
     elif tool_name == "tv.set_volume":
         state["volume"] = parameters["volume"]
+    elif tool_name == "tv.set_volume":
+        state["volume"] = parameters["volume"]
     elif tool_name == "tv.set_channel":
-        state["channel"] = parameters["channel"]
+        state["power"] = "on"
+        state["channel"] = str(parameters["channel"])
+        state["content_name"] = None
     elif tool_name == "tv.open_app":
+        state["power"] = "on"
         state["app_name"] = parameters["app_name"]
+        state["content_name"] = parameters["app_name"]
     elif tool_name == "tv.play_content":
-        state["content_title"] = parameters["content_title"]
+        state["power"] = "on"
+        state["content_name"] = parameters["content_title"]
         if "app_name" in parameters:
             state["app_name"] = parameters["app_name"]
 
@@ -100,7 +112,13 @@ def apply_command_to_state(state: dict[str, Any], tool_name: str, parameters: di
 
     # 세탁기
     elif tool_name == "washing_machine.set_action":
-        state["status"] = parameters["action"]
+        _wm_action_to_status = {
+            "start":   "washing",
+            "stop":    "stopped",
+            "pause":   "stopped",
+            "resume":  "washing",
+        }
+        state["status"] = _wm_action_to_status.get(parameters["action"], parameters["action"])
     elif tool_name == "washing_machine.set_mode":
         state["mode"] = parameters["mode"]
     elif tool_name == "washing_machine.set_spin_speed":
@@ -112,7 +130,12 @@ def apply_command_to_state(state: dict[str, Any], tool_name: str, parameters: di
 
     # 로봇청소기
     elif tool_name == "robot_vacuum.set_action":
-        state["status"] = parameters["action"]
+        _action_to_status = {
+            "start_cleaning": "cleaning",
+            "pause": "paused",
+            "return_to_dock": "returning",
+        }
+        state["status"] = _action_to_status.get(parameters["action"], parameters["action"])
     elif tool_name == "robot_vacuum.set_zone":
         state["zone"] = parameters["zone"]
     elif tool_name == "robot_vacuum.set_suction_power":
@@ -322,6 +345,16 @@ async def execute_commands(
         raise HTTPException(status_code=500, detail=str(e))
 
     updated_states = list(updated_states_map.values())
+
+    # in-memory 상태 동기화 후 /ws 로 전체 상태 브로드캐스트
+    from app.core.state_manager import device_states, broadcast_state
+    for updated_state in updated_states:
+        state_obj = getattr(device_states, updated_state["device_type"], None)
+        if state_obj:
+            for key, val in updated_state["state"].items():
+                if val is not None and hasattr(state_obj, key):
+                    setattr(state_obj, key, val)
+    await broadcast_state()
 
     response = {
         "success": True,
