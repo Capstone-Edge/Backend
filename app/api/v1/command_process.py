@@ -1,16 +1,14 @@
 import json
 import logging
 import os
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
-
-logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from datetime import datetime, timezone, timedelta
 
 from app.db.database import get_db
 from app.ai_mcp.parser import parse_natural_language
@@ -21,8 +19,13 @@ from app.api.v1.commands import (
     ExecuteCommandRequest,
     execute_commands,
 )
+from app.api.v1.dialogue_realtime import append_dialogue_message
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/commands", tags=["Command Pipeline"])
+
 
 PENDING_TTL_SECONDS = 30
 
@@ -51,6 +54,7 @@ DEVICE_KEYWORDS = {
     "oven": ["오븐"],
 }
 
+
 class CommandProcessRequest(BaseModel):
     session_id: str | None = None
     client_id: str | None = None
@@ -58,6 +62,7 @@ class CommandProcessRequest(BaseModel):
     raw_text: str | None = None
     stt_text: str | None = None
     source: str | None = "frontend"
+
 
 class CommandProcessClarifyRequest(BaseModel):
     session_id: str
@@ -75,6 +80,7 @@ def _pick_raw_text(request: CommandProcessRequest) -> str:
 
     return raw_text.strip()
 
+
 def _generate_session_id() -> str:
     return f"sess-{uuid4().hex[:8]}"
 
@@ -89,8 +95,7 @@ def _find_recent_pending_session_by_client_id(
     row = db.execute(
         text(
             """
-            SELECT
-                session_id
+            SELECT session_id
             FROM dialogue_sessions
             WHERE client_id = :client_id
               AND pending_command IS NOT NULL
@@ -105,7 +110,6 @@ def _find_recent_pending_session_by_client_id(
     if not row:
         return None
 
-    # TTL 검사는 기존 _try_load_pending_command()에서 다시 수행한다.
     pending_info = _try_load_pending_command(
         db=db,
         session_id=row["session_id"],
@@ -134,51 +138,50 @@ def _resolve_session_id(
 
     return _generate_session_id()
 
+
 def _get_pending_device_type(pending_command: dict[str, Any]) -> str | None:
     if not pending_command:
         return None
 
     device_type = pending_command.get("device_type")
+
     if device_type:
         return device_type
 
     target_devices = pending_command.get("target_devices")
+
     if isinstance(target_devices, list) and target_devices:
         first_target = target_devices[0]
+
         if isinstance(first_target, dict):
             return first_target.get("device_type") or first_target.get("device")
 
     commands = pending_command.get("commands")
+
     if isinstance(commands, list) and commands:
         first_command = commands[0]
+
         if isinstance(first_command, dict):
             return first_command.get("device_type")
 
     return None
 
+
 def _is_cancel_pending_text(raw_text: str) -> bool:
     normalized = raw_text.strip().lower()
     return any(word.lower() in normalized for word in CANCEL_WORDS)
-
-def _detect_device_type_from_text(raw_text: str) -> str | None:
-    normalized = raw_text.strip()
-
-    for device_type, keywords in DEVICE_KEYWORDS.items():
-        for keyword in keywords:
-            if keyword in normalized:
-                return device_type
-
-    return None
 
 
 def _detect_all_device_types_from_text(raw_text: str) -> list[str]:
     normalized = raw_text.strip()
     detected: list[str] = []
+
     for device_type, keywords in DEVICE_KEYWORDS.items():
         for keyword in keywords:
             if keyword in normalized:
                 detected.append(device_type)
                 break
+
     return detected
 
 
@@ -192,15 +195,14 @@ def _is_new_command_different_from_pending(
     if not all_detected:
         return False
 
-    # 여러 기기가 감지되면 복합 명령 → 새 파서로 전환
     if len(all_detected) > 1:
         return True
 
-    # pending 기기를 특정할 수 없는 상태(unknown pending)이고 사용자가 명확한 기기를 언급하면 새 명령으로 처리
     if not pending_device_type:
         return True
 
     return all_detected[0] != pending_device_type
+
 
 def _try_load_pending_command(
     db: Session,
@@ -209,12 +211,7 @@ def _try_load_pending_command(
     row = db.execute(
         text(
             """
-            SELECT
-                session_id,
-                pending_command,
-                clarification_turn,
-                last_intent,
-                updated_at
+            SELECT session_id, pending_command, clarification_turn, last_intent, updated_at
             FROM dialogue_sessions
             WHERE session_id = :session_id
             LIMIT 1
@@ -259,15 +256,12 @@ def _try_load_pending_command(
         "last_intent": row["last_intent"] or "device_control",
     }
 
+
 def _load_pending_command(db: Session, session_id: str) -> dict[str, Any]:
     row = db.execute(
         text(
             """
-            SELECT
-                session_id,
-                pending_command,
-                clarification_turn,
-                last_intent
+            SELECT session_id, pending_command, clarification_turn, last_intent
             FROM dialogue_sessions
             WHERE session_id = :session_id
             LIMIT 1
@@ -299,6 +293,7 @@ def _load_pending_command(db: Session, session_id: str) -> dict[str, Any]:
         "clarification_turn": row["clarification_turn"] or 1,
         "last_intent": row["last_intent"] or "device_control",
     }
+
 
 def _update_pending_command(
     db: Session,
@@ -333,8 +328,8 @@ def _update_pending_command(
             "source": source,
         },
     )
-
     db.commit()
+
 
 def _attach_client_to_session(
     db: Session,
@@ -358,8 +353,8 @@ def _attach_client_to_session(
             "source": source,
         },
     )
-
     db.commit()
+
 
 def _clear_pending_command(
     db: Session,
@@ -384,8 +379,8 @@ def _clear_pending_command(
             "last_intent": last_intent,
         },
     )
-
     db.commit()
+
 
 def _cancel_pending_response(
     db: Session,
@@ -405,6 +400,7 @@ def _cancel_pending_response(
         "clarification_needed": False,
         "response_text": "이전 요청을 취소했어요.",
     }
+
 
 def _expire_pending_command(
     db: Session,
@@ -429,8 +425,8 @@ def _expire_pending_command(
             "last_intent": last_intent,
         },
     )
-
     db.commit()
+
 
 async def _execute_from_parse_result(
     db: Session,
@@ -446,11 +442,12 @@ async def _execute_from_parse_result(
             detail="clarification_needed=false 이지만 실행할 commands가 없습니다.",
         )
 
-    # step_order 누락 방어 처리
     normalized_commands = []
+
     for i, command in enumerate(commands):
         if "step_order" not in command:
             command = {**command, "step_order": i + 1}
+
         normalized_commands.append(command)
 
     try:
@@ -471,6 +468,7 @@ async def _execute_from_parse_result(
         request=execute_request,
         db=db,
     )
+
 
 async def _process_parse_flow(
     db: Session,
@@ -503,9 +501,9 @@ async def _process_parse_flow(
     )
 
     if parse_result.get("clarification_needed") is True:
-        # 즉시 실행 가능한 commands가 있으면 먼저 실행 후 재질문
         immediate_commands = parse_result.get("commands", [])
         execute_result = None
+
         if immediate_commands:
             try:
                 execute_result = await _execute_from_parse_result(
@@ -514,10 +512,12 @@ async def _process_parse_flow(
                     raw_user_input=raw_text,
                     parse_result=parse_result,
                 )
-                logger.info(f"[PARSE FLOW] 즉시 실행 완료: {[c['tool_name'] for c in immediate_commands]}")
+                logger.info(
+                    f"[PARSE FLOW] 즉시 실행 완료: {[c['tool_name'] for c in immediate_commands]}"
+                )
             except Exception as e:
                 logger.error(f"[PARSE FLOW] 즉시 실행 실패: {e}")
-                # 실행 실패해도 재질문은 계속 진행
+
         return {
             "status": "waiting_clarification",
             "mode": "parse",
@@ -525,7 +525,6 @@ async def _process_parse_flow(
             **parse_result,
         }
 
-    # 정보 조회 응답 (commands 없이 response_text만 있는 경우)
     if not parse_result.get("commands"):
         return {
             "status": "info_response",
@@ -553,6 +552,7 @@ async def _process_parse_flow(
         "execute_result": execute_result,
     }
 
+
 async def _process_clarification_flow(
     db: Session,
     session_id: str,
@@ -567,7 +567,11 @@ async def _process_clarification_flow(
         pending_command=pending_info["pending_command"],
     )
 
-    logger.info(f"[CLARIFY FLOW] clarify_result clarification_needed={clarify_result.get('clarification_needed')}, commands={clarify_result.get('commands')}")
+    logger.info(
+        "[CLARIFY FLOW] clarify_result "
+        f"clarification_needed={clarify_result.get('clarification_needed')}, "
+        f"commands={clarify_result.get('commands')}"
+    )
 
     if clarify_result.get("clarification_needed") is True:
         _update_pending_command(
@@ -594,9 +598,8 @@ async def _process_clarification_flow(
         parse_result=clarify_result,
     )
 
-    from app.core.state_manager import broadcast_state, websocket_connections, device_states
-    logger.info(f"[CLARIFY BROADCAST] websocket_connections 수: {len(websocket_connections)}")
-    logger.info(f"[CLARIFY BROADCAST] device_states: {device_states.model_dump()}")
+    from app.core.state_manager import broadcast_state
+
     await broadcast_state()
 
     _clear_pending_command(
@@ -615,17 +618,48 @@ async def _process_clarification_flow(
         "execute_result": execute_result,
     }
 
+
+async def _append_assistant_log_from_response(
+    *,
+    response: dict[str, Any],
+    request: CommandProcessRequest,
+    fallback_session_id: str | None,
+):
+    await append_dialogue_message(
+        role="assistant",
+        text=response.get("response_text"),
+        session_id=response.get("session_id") or fallback_session_id,
+        client_id=request.client_id,
+        device_id=request.device_id,
+        source="backend",
+        status=response.get("status"),
+        mode=response.get("mode"),
+        clarification_needed=response.get("clarification_needed"),
+    )
+
+
 @router.post("/process")
 async def process_command(
     request: CommandProcessRequest,
     db: Session = Depends(get_db),
 ):
     raw_text = _pick_raw_text(request)
+
     session_id = _resolve_session_id(
         db=db,
         request=request,
     )
+
     source = request.source or "frontend"
+
+    await append_dialogue_message(
+        role="user",
+        text=raw_text,
+        session_id=session_id,
+        client_id=request.client_id,
+        device_id=request.device_id,
+        source=source,
+    )
 
     pending_info = _try_load_pending_command(
         db=db,
@@ -635,15 +669,21 @@ async def process_command(
     if pending_info is not None:
         pending_command = pending_info["pending_command"]
 
-        # 1. 사용자가 재질문 흐름을 취소한 경우
         if _is_cancel_pending_text(raw_text):
-            return _cancel_pending_response(
+            response = _cancel_pending_response(
                 db=db,
                 session_id=session_id,
                 pending_info=pending_info,
             )
 
-        # 2. 사용자가 재질문 답변 대신 다른 기기 명령을 말한 경우
+            await _append_assistant_log_from_response(
+                response=response,
+                request=request,
+                fallback_session_id=session_id,
+            )
+
+            return response
+
         if _is_new_command_different_from_pending(
             raw_text=raw_text,
             pending_command=pending_command,
@@ -654,7 +694,7 @@ async def process_command(
                 last_intent=pending_info.get("last_intent", "device_control"),
             )
 
-            parse_response = await _process_parse_flow(
+            response = await _process_parse_flow(
                 db=db,
                 session_id=_generate_session_id(),
                 device_id=request.device_id,
@@ -663,28 +703,41 @@ async def process_command(
                 client_id=request.client_id,
             )
 
-            parse_response["mode"] = "new_command_after_pending_cancelled"
-            parse_response["cancelled_pending"] = pending_command
+            response["mode"] = "new_command_after_pending_cancelled"
+            response["cancelled_pending"] = pending_command
 
-            original_response_text = parse_response.get("response_text", "")
-            parse_response["response_text"] = (
+            original_response_text = response.get("response_text", "")
+
+            response["response_text"] = (
                 f"이전 요청은 취소하고, {original_response_text}"
                 if original_response_text
                 else "이전 요청은 취소하고 새 명령을 처리했어요."
             )
 
-            return parse_response
+            await _append_assistant_log_from_response(
+                response=response,
+                request=request,
+                fallback_session_id=session_id,
+            )
 
-        # 3. 취소도 아니고 다른 기기 명령도 아니면 기존 재질문 답변으로 처리
-        return await _process_clarification_flow(
+            return response
+
+        response = await _process_clarification_flow(
             db=db,
             session_id=session_id,
             user_answer=raw_text,
             pending_info=pending_info,
         )
 
-    # 4. pending_command가 없으면 일반 명령 처리
-    return await _process_parse_flow(
+        await _append_assistant_log_from_response(
+            response=response,
+            request=request,
+            fallback_session_id=session_id,
+        )
+
+        return response
+
+    response = await _process_parse_flow(
         db=db,
         session_id=session_id,
         device_id=request.device_id,
@@ -692,6 +745,15 @@ async def process_command(
         source=source,
         client_id=request.client_id,
     )
+
+    await _append_assistant_log_from_response(
+        response=response,
+        request=request,
+        fallback_session_id=session_id,
+    )
+
+    return response
+
 
 @router.post("/process-clarify")
 async def process_command_clarify(
@@ -703,9 +765,28 @@ async def process_command_clarify(
         session_id=request.session_id,
     )
 
-    return await _process_clarification_flow(
+    await append_dialogue_message(
+        role="user",
+        text=request.user_answer,
+        session_id=request.session_id,
+        source="frontend",
+    )
+
+    response = await _process_clarification_flow(
         db=db,
         session_id=request.session_id,
         user_answer=request.user_answer,
         pending_info=pending_info,
     )
+
+    await append_dialogue_message(
+        role="assistant",
+        text=response.get("response_text"),
+        session_id=response.get("session_id") or request.session_id,
+        source="backend",
+        status=response.get("status"),
+        mode=response.get("mode"),
+        clarification_needed=response.get("clarification_needed"),
+    )
+
+    return response
