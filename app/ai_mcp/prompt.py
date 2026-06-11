@@ -148,6 +148,12 @@ TV 콘텐츠 규칙 (추천 우선, 재질문 최소화):
     ]
   }
 
+response_text 작성 규칙:
+- 이모티콘 사용 금지
+- 볼드체(**)·마크다운 서식 사용 금지
+- 물음표·느낌표를 제외한 특수기호 사용 금지
+- 의미 전달에 필요한 최소한의 텍스트만 사용한다. 불필요한 부연 설명, 추가 제안, 마무리 문장은 쓰지 않는다.
+
 출력 형식:
 {
   "intent": "device_control | multi_device_control | routine_control | device_query",
