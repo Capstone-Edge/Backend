@@ -30,12 +30,13 @@ AI_PARSER_SYSTEM_PROMPT = """
 - 예시: "약풍으로 해줘", "약하게 해줘" → air_conditioner.set_fan_speed(fan_speed="low")
 
 감정 표현 처리 규칙:
-- 사용자가 기기 제어 의도 없이 감정이나 기분 상태를 표현하면 공감하며 스마트홈으로 기분을 풀어줄 방법을 제안한다.
-- 감정 표현 예시: "기분이 안 좋아", "꿀꿀해", "우울해", "피곤해", "지쳐", "꾸리꾸리해", "심심해", "스트레스받아", "힘들어", "기운없어"
+- 사용자 입력이 명확한 기기 제어 명령이 아닌 경우 — 감정 표현, 상황 설명, 신체 상태, 날씨 반응, 愚痴(불평), 독백, 대화 시도 등 어떤 형태든 — 전부 emotional_comfort 흐름으로 처리한다.
+- 기기 이름이나 제어 동사(켜줘, 꺼줘, 설정해줘 등)가 없으면 무조건 emotional_comfort로 판단한다.
 - 이 경우 intent="emotional_comfort", commands=[], clarification_needed=true로 반환한다.
-- response_text에 공감 문장을 먼저 쓰고, 어떤 도움을 드릴지 선택지를 제안한다.
+- response_text에 공감 문장을 먼저 쓰고, target_devices에 있는 기기만 언급하여 선택지를 제안한다. 등록되지 않은 기기(조명 등)는 절대 언급하지 않는다.
+- pending_command에는 반드시 context_trigger="emotional_comfort"를 포함한다. 이 필드가 없으면 클라리파이어가 감정 흐름을 인식하지 못한다.
 - 예: "기분이 꿀꿀해" →
-  response_text: "기분이 안 좋으시군요 ㅠ 좋아하는 콘텐츠를 틀어드릴까요? 아니면 시원하게 에어컨을 켜드릴까요? 둘 다 원하시면 '둘 다 해'라고 말씀해 주세요."
+  response_text: "기분이 안 좋으시군요. 좋아하는 콘텐츠를 틀어드릴까요? 아니면 시원하게 에어컨을 켜드릴까요? 둘 다 원하시면 '둘 다 해'라고 말씀해 주세요."
   pending_command: {
     "context_trigger": "emotional_comfort",
     "missing_parameters": ["comfort_preference"],
@@ -266,9 +267,10 @@ AI_CLARIFIER_SYSTEM_PROMPT = """
   - "시원하게", "에어컨", "선선하게", "에어컨 켜줘" → living_room_aircon의 known_parameters(power=on, mode=cool)로 즉시 실행. 온도는 묻지 않는다.
   - "공기청정기", "공기 맑게", "환기", "쾌적", "깨끗하게" → living_room_air_purifier 즉시 실행 (power=on, mode=auto)
   - "TV", "영화", "드라마", "유튜브", "넷플릭스", "뭔가 틀어줘", "볼 거" → tv.set_power(power="on")만 실행. 콘텐츠는 별도 지정이 없으면 묻지 않는다.
-  - "둘 다", "둘 다 해", "둘 다 해줘", "다 해줘", "전부", "전부 다", "모두", "다 켜줘", "다 해", "모두 다" → target_devices에 있는 모든 기기를 재질문 없이 즉시 실행. 각 기기의 known_parameters를 그대로 사용한다.
+  - "둘 다", "둘 다 해", "둘 다 해줘", "다 해줘", "다 해", "전부", "전부 다", "모두", "모두 다", "다", "다 켜줘", "그냥 다 해", "다 틀어줘" → target_devices에 있는 모든 기기를 재질문 없이 즉시 실행. 각 기기의 known_parameters를 그대로 사용한다.
 - known_parameters에 없는 파라미터(예: 온도, 콘텐츠 제목)는 추가 실행하지 말고 있는 것만 실행한다.
-- 공감 문장을 response_text에 포함한다. 예: "기운 내세요! TV 켜고 시원하게 해드릴게요 :)"
+- 공감 문장을 response_text에 포함한다. 예: "기운 내세요! TV 켜고 시원하게 해드릴게요."
+- 중요: emotional_comfort 흐름에서 사용자가 어떤 답변을 해도 절대 재질문하지 않는다. 의도를 파악해 바로 실행한다.
 
 TV 콘텐츠 존재 여부 검증 규칙:
 - missing_parameters에 season, episode, content_title 등 콘텐츠 관련 항목이 포함된 경우 아래 순서로 판단한다.
