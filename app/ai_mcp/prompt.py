@@ -57,10 +57,11 @@ AI_PARSER_SYSTEM_PROMPT = """
 - 사용자가 특정 옷감이나 세탁물을 언급하면 AI는 세탁 지식을 활용하여 적절한 모드, 물 온도, 탈수 강도를 자동으로 설정한다.
 - 재질문 없이 바로 commands를 생성한다.
 - water_temperature는 0~95 사이의 정수로 설정한다.
-- 예시: "와이셔츠 빨아줘" → mode="delicate", water_temperature=30, spin_speed="low"
-- 예시: "청바지 빨아줘" → mode="standard", water_temperature=40, spin_speed="medium"
-- 예시: "수건 빨아줘" → mode="heavy", water_temperature=60, spin_speed="high"
-- 예시: "울 스웨터 빨아줘" → mode="wool", water_temperature=30, spin_speed="low"
+- 반드시 set_power(power="on"), set_mode, set_water_temperature, set_spin_speed, set_action(action="start") 순서로 commands를 생성한다.
+- 예시: "와이셔츠 빨아줘" → set_power(power="on"), set_mode(mode="delicate"), set_water_temperature(water_temperature=30), set_spin_speed(spin_speed="low"), set_action(action="start")
+- 예시: "청바지 빨아줘" → set_power(power="on"), set_mode(mode="standard"), set_water_temperature(water_temperature=40), set_spin_speed(spin_speed="medium"), set_action(action="start")
+- 예시: "수건 빨아줘" → set_power(power="on"), set_mode(mode="heavy"), set_water_temperature(water_temperature=60), set_spin_speed(spin_speed="high"), set_action(action="start")
+- 예시: "울 스웨터 빨아줘" → set_power(power="on"), set_mode(mode="wool"), set_water_temperature(water_temperature=30), set_spin_speed(spin_speed="low"), set_action(action="start")
 
 오븐 조리 자동 설정 규칙:
 - 사용자가 특정 음식을 오븐으로 조리하고 싶다고 말하면, AI는 요리 지식을 활용하여 적절한 온도와 모드를 자동으로 설정한다.
@@ -78,7 +79,9 @@ AI_PARSER_SYSTEM_PROMPT = """
 - 예시: "침실2 청소해줘" → robot_vacuum.set_zone(zone="bedroom2") + robot_vacuum.set_action(action="start_cleaning")
 - 예시: "주방이랑 침실1 청소해줘" → robot_vacuum.set_zone(zone=["kitchen","bedroom1"]) + robot_vacuum.set_action(action="start_cleaning")
 - 예시: "거실하고 주방만 청소해줄래" → robot_vacuum.set_zone(zone=["living_room","kitchen"]) + robot_vacuum.set_action(action="start_cleaning")
-- 예시: "청소기 돌려줘" (구역 미지정) → robot_vacuum.set_action(action="start_cleaning") 만 실행
+- 구역이 명시되지 않은 경우 반드시 재질문한다. commands=[]로 두고 clarification_needed=true를 반환한다.
+- 예시: "청소해줘", "청소기 돌려줘", "청소기 켜줘" (구역 미지정) → clarification_question: "어디를 청소할까요? (예: 거실, 주방, 침실, 전체)"
+- pending_command: device_name="living_room_robot_vacuum", device_type="robot_vacuum", candidate_tools=["robot_vacuum.set_zone","robot_vacuum.set_action"], known_parameters={"action":"start_cleaning"}, missing_parameters=["zone"]
 - 별도 침실용 청소기 같은 건 존재하지 않는다. 절대 다른 device_name을 만들지 않는다.
 
 TV 채널 및 앱 제어 규칙:
@@ -264,7 +267,9 @@ AI_CLARIFIER_SYSTEM_PROMPT = """
 - 공감 문장을 response_text에 포함한다. 예: "기운 내세요! TV 켜고 시원하게 해드릴게요 :)"
 
 TV 콘텐츠 존재 여부 검증 규칙:
-- missing_parameters에 season, episode, content_title 등 콘텐츠 관련 항목이 포함된 경우, 사용자가 답변한 편/시즌/화가 실제로 존재하는지 AI 지식으로 반드시 검증한다.
+- missing_parameters에 season, episode, content_title 등 콘텐츠 관련 항목이 포함된 경우 아래 순서로 판단한다.
+- 1순위: 직전 clarification_question에서 범위를 안내한 경우(예: "1~8편까지 있습니다"), 사용자가 그 범위 안의 번호를 답했으면 추가 검증 없이 바로 실행한다.
+- 2순위: 범위 안내가 없었거나 사용자 답변이 명백히 범위를 벗어난 경우에만 AI 지식으로 검증한다.
 - 존재하지 않는 콘텐츠를 요청하면 commands를 생성하지 않고 clarification_needed=true를 반환한다.
 - response_text와 clarification_question에 "존재하지 않습니다"와 함께 실제 범위를 안내한다.
   - 예: "해리포터 100편은 존재하지 않습니다. 해리포터는 1~8편까지 있습니다. 몇 편을 틀어드릴까요?"

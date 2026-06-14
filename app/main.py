@@ -2,7 +2,6 @@ import json
 
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -20,18 +19,6 @@ from app.core.state_manager import (
 )
 from app.core.ws_manager import ws_manager
 from app.db.database import get_db
-from app.mcp.server import (
-    control_air_conditioner,
-    control_air_purifier,
-    control_robot_vacuum,
-    control_tv,
-)
-
-
-class ClarifyRequest(BaseModel):
-    text: str
-    session_id: str
-    context_trigger: str
 
 
 app = FastAPI(title="SmartHome AIoT API")
@@ -66,61 +53,6 @@ async def db_health(db: Session = Depends(get_db)):
         "db_name": result["db_name"],
     }
 
-
-async def execute_nlu_result(nlu: dict):
-    """
-    구형 NLU 실행 헬퍼.
-    현재 핵심 흐름은 /api/v1/commands/process 이지만,
-    기존 코드 호환을 위해 유지한다.
-    """
-    if nlu.get("clarification_needed"):
-        return
-
-    for td in nlu.get("target_devices", []):
-        device = td.get("device")
-        action = td.get("action")
-        params = td.get("parameters", {})
-
-        if device == "air_conditioner":
-            await control_air_conditioner(
-                power=params.get("power"),
-                temperature=params.get("temperature"),
-                mode=params.get("mode"),
-                fan_speed=params.get("fan_speed"),
-                louver_angle=params.get("louver_angle"),
-            )
-
-        elif device == "tv":
-            await control_tv(
-                power=params.get("power"),
-                channel=params.get("channel"),
-                content_name=params.get("content_name"),
-            )
-
-        elif device == "air_purifier":
-            await control_air_purifier(
-                power=params.get("power"),
-                mode=params.get("mode"),
-            )
-
-        elif device == "robot_vacuum":
-            rv_action = action
-
-            if action in ("start_cleaning", "pause", "return_to_dock"):
-                rv_action = action
-            elif params.get("power") == "on" or params.get("zone") is not None:
-                rv_action = "start_cleaning"
-            elif params.get("power") == "off":
-                rv_action = "return_to_dock"
-            else:
-                rv_action = params.get("action")
-
-            await control_robot_vacuum(
-                action=rv_action,
-                zone=params.get("zone"),
-                suction_power=params.get("suction_power"),
-                cleaning_mode=params.get("cleaning_mode"),
-            )
 
 
 @app.post("/api/v1/command/execute")

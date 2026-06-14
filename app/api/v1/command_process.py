@@ -11,7 +11,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.ai_mcp.parser import parse_natural_language
 from app.ai_mcp.llm_parser import parse_with_llm
 from app.ai_mcp.clarifier import clarify_natural_language
 from app.api.v1.commands import (
@@ -478,8 +477,6 @@ async def _process_parse_flow(
     source: str,
     client_id: str | None = None,
 ):
-    parser_mode = os.getenv("PARSER_MODE", "rule")
-
     common_args = {
         "raw_text": raw_text,
         "session_id": session_id,
@@ -488,10 +485,7 @@ async def _process_parse_flow(
         "db": db,
     }
 
-    if parser_mode == "llm":
-        parse_result = await parse_with_llm(**common_args)
-    else:
-        parse_result = await parse_natural_language(**common_args)
+    parse_result = await parse_with_llm(**common_args)
 
     _attach_client_to_session(
         db=db,

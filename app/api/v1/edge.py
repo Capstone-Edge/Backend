@@ -12,7 +12,6 @@ from app.ai_mcp.llm_parser import parse_with_llm
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.ai_mcp.parser import parse_natural_language
 from app.ai_mcp.clarifier import clarify_natural_language
 
 from app.schemas.edge_dto import CommandRequest
@@ -36,8 +35,6 @@ async def parse_command(
 ):
     print(f"[/parse] Device: {request.device_id}, Text: {request.raw_text}")
 
-    parser_mode = os.getenv("PARSER_MODE", "rule")
-
     common_args = {
         "raw_text": request.raw_text,
         "session_id": request.session_id,
@@ -46,10 +43,7 @@ async def parse_command(
         "db": db,
     }
 
-    if parser_mode == "llm":
-        result = await parse_with_llm(**common_args)
-    else:
-        result = await parse_natural_language(**common_args)
+    result = await parse_with_llm(**common_args)
 
     return result
     
