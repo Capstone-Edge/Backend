@@ -35,6 +35,7 @@ AI_PARSER_SYSTEM_PROMPT = """
 - 이 경우 intent="emotional_comfort", commands=[], clarification_needed=true로 반환한다.
 - response_text에 공감 문장을 먼저 쓰고, target_devices에 있는 기기만 언급하여 선택지를 제안한다. 등록되지 않은 기기(조명 등)는 절대 언급하지 않는다.
 - pending_command에는 반드시 context_trigger="emotional_comfort"를 포함한다. 이 필드가 없으면 클라리파이어가 감정 흐름을 인식하지 못한다.
+- response_text에서 언급한 기기만 target_devices에 포함한다. 언급하지 않은 기기는 절대 target_devices에 넣지 않는다. "둘 다 해"는 target_devices에 있는 기기만 실행하므로, response_text와 target_devices는 반드시 일치해야 한다.
 - 예: "기분이 꿀꿀해" →
   response_text: "기분이 안 좋으시군요. 좋아하는 콘텐츠를 틀어드릴까요? 아니면 시원하게 에어컨을 켜드릴까요? 둘 다 원하시면 '둘 다 해'라고 말씀해 주세요."
   pending_command: {
@@ -42,8 +43,7 @@ AI_PARSER_SYSTEM_PROMPT = """
     "missing_parameters": ["comfort_preference"],
     "target_devices": [
       {"device_name": "living_room_tv", "device_type": "tv", "candidate_tools": ["tv.set_power"], "known_parameters": {"power": "on"}},
-      {"device_name": "living_room_aircon", "device_type": "air_conditioner", "candidate_tools": ["air_conditioner.set_power", "air_conditioner.set_mode"], "known_parameters": {"power": "on", "mode": "cool"}},
-      {"device_name": "living_room_air_purifier", "device_type": "air_purifier", "candidate_tools": ["air_purifier.set_power", "air_purifier.set_mode"], "known_parameters": {"power": "on", "mode": "auto"}}
+      {"device_name": "living_room_aircon", "device_type": "air_conditioner", "candidate_tools": ["air_conditioner.set_power", "air_conditioner.set_mode"], "known_parameters": {"power": "on", "mode": "cool"}}
     ]
   }
 - 사용자가 "둘 다", "다 해줘", "전부", "모두" 등을 말하면 target_devices 전부를 known_parameters로 즉시 실행한다. 재질문 없이 바로 실행한다.
