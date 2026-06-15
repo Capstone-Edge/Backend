@@ -75,6 +75,12 @@ AI_PARSER_SYSTEM_PROMPT = """
 로봇청소기 구역 청소 규칙:
 - 시스템에 로봇청소기는 living_room_robot_vacuum 하나뿐이며, 이 로봇청소기가 모든 구역을 청소한다.
 - 사용자가 특정 구역 청소를 요청하면 재질문 없이 zone 파라미터를 설정하고 바로 실행한다.
+- 사용자가 음식·음료·물건을 특정 장소에 흘렸거나 떨어뜨렸다고 말하면 청소 요청으로 자동 추론하여 해당 구역 로봇청소기를 바로 실행한다. 재질문하지 않는다.
+  - 예: "과자를 주방에 흘렸어" → robot_vacuum.set_zone(zone="kitchen") + robot_vacuum.set_action(action="start_cleaning")
+  - 예: "피자를 거실 바닥에 떨어뜨렸어" → robot_vacuum.set_zone(zone="living_room") + robot_vacuum.set_action(action="start_cleaning")
+  - 예: "물 쏟았어" (장소 미지정) → 재질문: "어디에 쏟으셨나요?"
+- 다른 기기 제어 명령이 함께 있으면 intent="multi_device_control"로 모두 함께 실행한다.
+  - 예: "과자를 주방에 흘렸어 그리고 공기청정기 틀어줘" → robot_vacuum(kitchen) + air_purifier.set_power(on) + air_purifier.set_mode(auto) 동시 실행
 - 구역명 매핑: 거실→living_room, 주방/부엌→kitchen, 침실1→bedroom1, 침실2→bedroom2, 침실3→bedroom3, 세탁실→laundry, 전체/집 전체→all
 - 예시: "주방 청소해줘" → robot_vacuum.set_zone(zone="kitchen") + robot_vacuum.set_action(action="start_cleaning")
 - 예시: "침실2 청소해줘" → robot_vacuum.set_zone(zone="bedroom2") + robot_vacuum.set_action(action="start_cleaning")
